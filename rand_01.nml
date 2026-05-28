@@ -1,0 +1,20 @@
+&grid
+  rmin   = 0.5
+  rmax   = 600.5
+  nr     = 6000
+  ell_max = 100
+/
+
+&physics
+  M_bh = 0.5d0
+  mu =  0.00972837d0
+  p0 = 0.05d0
+  initial_conditions = "mode_from_SL_all"
+/
+
+&run
+  t_end = 400.0
+  cfl   = 0.05
+  dt_out_r = 10.0
+  only_m0 = .false.
+/

@@ -1,0 +1,20 @@
+&grid
+  rmin   = 0.8
+  rmax   = 600.8
+  nr     = 18000
+  ell_max = 80
+/
+
+&physics
+  M_bh = 0.5d0
+  mu =  0.00972837d0
+  k0 = 0.5d0
+  initial_data = "gaussian_positive_charge"
+/
+
+&run
+  t_end = 200.0
+  cfl   = 0.25
+  dt_out_r = 5.00
+  only_m0 = .true.
+/

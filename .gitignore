@@ -1,0 +1,57 @@
+# Build products
+build/
+*.o
+*.mod
+*.smod
+*.a
+*.so
+*.exe
+a.out
+main
+
+# Runtime outputs / large data
+*.h5
+*.hdf5
+*.dat
+*.bin
+*.npy
+*.npz
+*.vtk
+*.xdmf
+
+# Logs
+*.log
+*.out
+*.err
+nohup.out
+slurm-*.out
+
+# Python cache
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Generated media
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.avi
+
+# Temporary files
+*.tmp
+*.bak
+*~
+.DS_Store
+
+# Compiled numerical executables
+/numerical/SL_Dirichlet
+/numerical/SL_conservative
+/numerical/SL_solver
+/numerical/sl_metric_grid
+/numerical/sl_nonuniform
+/numerical/sl_nonuniform_h5
+/numerical/sl_solve_ell_parallel
+/numerical/sl_solver_one_ell
+/numerical/xSL
