@@ -25,25 +25,18 @@ contains
     complex(real64),   intent(out) :: dpsi_dt(:)
     complex(real64),   intent(out) :: dpi_dt(:)
 
-    integer       :: n
-    real(real64)  :: dr
-
-    ! Tamaño radial desde el estado
-    n  = S%Nr
-    dr = M%dr
-
     ! --- Ecuación de φ:  ∂_t φ = α π + β ψ ---
     dphi_dt = G%alpha * S%pi + G%beta * S%psi
 
     ! --- Ecuación de ψ ---
     ! dψ/dt = ∂_r(α π) + (dβ/dr) ψ + advección(ψ; β)
-    dpsi_dt = dx(G%alpha * S%pi, dr)   &
+    dpsi_dt = dx(G%alpha * S%pi, M)    &
             + G%dbeta  * S%psi        &
-            + advec(S%psi, G%beta, dr)
+            + advec(S%psi, G, M)
 
     ! --- Ecuación de π ---
-    dpi_dt =  advec(S%pi, G%beta, dr)                                      &
-            +  G%alpha / M%r**2 * dx( M%r**2 * G%guu * S%psi, dr )           &
+    dpi_dt =  advec(S%pi, G, M)                                             &
+            +  G%alpha / M%r**2 * dx( M%r**2 * G%guu * S%psi, M )            &
             +  G%alpha * ( G%K_c * S%pi                                      &
             -  ( mu**2 + dble(ell*(ell + 1)) / M%r**2 ) * S%phi )
 

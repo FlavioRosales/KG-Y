@@ -52,7 +52,7 @@ contains
       S%phi(i) = cmplx(env * cos(phase), env * sin(phase), kind=real64)
     end do
 
-    S%psi = dx(S%phi, Mesh%dr)
+    S%psi = dx(S%phi, Mesh)
 
     S%pi  = dsqrt(G%guu) * S%psi
 
@@ -74,7 +74,7 @@ subroutine set_IC_mode_from_SL(ell, m, lambda, eigenR, S, G, Mesh)
   !! IC complejas para un modo (ell,m):
   !!   phi(r_i) = sum_n C_n * R(i,n)
   !!   psi = d phi / dr
-  !!   pi  = sqrt(guu) * psi   (como en tu elección actual)
+  !!   pi  = -i * sum_n Omega_n * C_n * R(i,n)
   !!
   use iso_fortran_env, only: real64
   use sl_spectrum,     only: Clmn_amp
@@ -105,7 +105,7 @@ subroutine set_IC_mode_from_SL(ell, m, lambda, eigenR, S, G, Mesh)
   deallocate(C)
 
   S%phi = S%phi * exp(- (Mesh%r - 80.0_real64)**2 / (2.0_real64 * 20.0_real64**2) ) 
-  S%psi = dx(S%phi, Mesh%dr)
+  S%psi = dx(S%phi, Mesh)
   S%pi = cmplx( sqrt(G%guu), 0.0_real64, kind=real64 ) * S%psi
 
 
@@ -137,10 +137,10 @@ subroutine mode_from_SL_all(ell, m, mu, lambda, eigenR, S, G, Mesh)
   type(geometry_t),     intent(in) :: G
   type(mesh_t),     intent(in) :: Mesh
 
-  integer :: n, i
+  integer :: n
   complex(real64), allocatable :: C(:)
   complex(real64) :: Omega_ln
-  real(real64), parameter :: alpha_eps = 1.0e-14_real64
+  complex(real64), parameter :: imag_unit = cmplx(0.0_real64, 1.0_real64, kind=real64)
 
   allocate(C(size(lambda)))
 
@@ -150,14 +150,14 @@ subroutine mode_from_SL_all(ell, m, mu, lambda, eigenR, S, G, Mesh)
   end do
 
   do n = 1, size(lambda)
+        Omega_ln = cmplx(dsqrt(mu**2 + lambda(n)), 0.0_real64, kind=real64)
         S%phi = S%phi + C(n) * eigenR(:,n)
-        Omega_ln = cmplx(dsqrt(mu**2 + lambda(n)),0.0d0,kind=real64)
-        S%pi = -cmplx(0.0d0,1.0d0,kind=real64)*Omega_ln*S%phi
+        S%pi = S%pi - imag_unit * Omega_ln * C(n) * eigenR(:,n)
   end do
 
   deallocate(C)
 
-  S%psi = dx(S%phi, Mesh%dr)
+  S%psi = dx(S%phi, Mesh)
   ! S%pi = - G%beta / G%alpha * S%psi
 
 

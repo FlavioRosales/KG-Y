@@ -41,7 +41,9 @@ contains
     integer,        intent(in)    :: Nt
     integer,        intent(in)    :: ell
     real(real64),   intent(in)    :: mu_field
-    
+
+    call this%free()
+
     this%Nr = Nr
     this%Nt = Nt
     this%ell = ell
@@ -206,7 +208,13 @@ end function
     if (allocated(this%pi))  deallocate(this%pi)
     if (allocated(this%Noether)) deallocate(this%Noether)
     if (allocated(this%Accretion_Noether)) deallocate(this%Accretion_Noether)
+    if (allocated(this%energy_density)) deallocate(this%energy_density)
+    if (allocated(this%klm)) deallocate(this%klm)
+    if (allocated(this%Omegalm)) deallocate(this%Omegalm)
+    if (allocated(this%omglm)) deallocate(this%omglm)
+    if (allocated(this%vr)) deallocate(this%vr)
     this%Nr = 0
+    this%Nt = 0
   end subroutine
 
 end module
