@@ -1,5 +1,4 @@
 module state
-  use iso_fortran_env, only: real64
     use geometry,   only: geometry_t        ! <-- módulo que define TYPE :: geometry
     use mesh,       only: mesh_t          ! <-- módulo que define TYPE :: mesh_t
 
@@ -7,17 +6,17 @@ module state
   private
   public :: state_t
 
-  real(real64), parameter :: pii = acos(-1.0_real64)
-  real(real64), parameter :: EPS = 1.0e-8_real64
+  real(kind=8), parameter :: pii = acos(-1.0d0)
+  real(kind=8), parameter :: EPS = 1.0d-8
 
   type :: state_t
      integer :: Nr = 0
      integer :: Nt = 0
-     real(real64) :: mu_field
+     real(kind=8) :: mu_field
      integer :: ell
-     complex(real64), allocatable :: phi(:), psi(:), pi(:)
-     real(real64), allocatable :: Noether(:), Accretion_Noether(:)
-     real(real64), allocatable :: energy_density(:), klm(:), Omegalm(:), omglm(:), vr(:) 
+     complex(kind=8), allocatable :: phi(:), psi(:), pi(:)
+     real(kind=8), allocatable :: Noether(:), Accretion_Noether(:)
+     !real(kind=8), allocatable :: energy_density(:), klm(:), Omegalm(:), omglm(:), vr(:) 
    contains
      procedure :: init  => state_init
      procedure :: zero  => state_zero
@@ -40,7 +39,7 @@ contains
     integer,        intent(in)    :: Nr
     integer,        intent(in)    :: Nt
     integer,        intent(in)    :: ell
-    real(real64),   intent(in)    :: mu_field
+    real(kind=8),   intent(in)    :: mu_field
 
     call this%free()
 
@@ -50,14 +49,13 @@ contains
     this%mu_field = mu_field
 
     allocate(this%phi(Nr), this%psi(Nr), this%pi(Nr), &
-    this%Noether(0:Nt), this%Accretion_Noether(0:Nt), &
-    this%energy_density(Nr), this%klm(Nr), this%Omegalm(Nr), this%omglm(Nr), this%vr(Nr) )
+    this%Noether(0:Nt), this%Accretion_Noether(0:Nt) )
+    !this%energy_density(Nr), this%klm(Nr), this%Omegalm(Nr), this%omglm(Nr), this%vr(Nr) )
 
     call this%zero()
   end subroutine
 
 subroutine diagnostic_state(this, G, M, idx,hit)
-  use iso_fortran_env, only: real64
   implicit none
 
   class(state_t),    intent(inout) :: this
@@ -65,16 +63,16 @@ subroutine diagnostic_state(this, G, M, idx,hit)
   class(mesh_t),     intent(in)    :: M
   integer,           intent(in)    :: idx
   logical,           intent(in)    :: hit
-  real(real64) :: den(M%Nr)
+  real(kind=8) :: den(M%Nr)
 
-  if(hit) then
-    this%energy_density = this%energy(G, M)
-    this%klm = this%radial_wavenumber(G, M)
-    this%Omegalm = this%local_frequency(G, M)
-    this%omglm = G%alpha * this%Omegalm - G%beta * this%klm
-    den = sign(max(abs(this%Omegalm), EPS), this%Omegalm)
-    this%vr = -G%beta + G%alpha * G%guu * this%klm / den
-  end if
+!  if(hit) then
+ !   this%energy_density = this%energy(G, M)
+ !   this%klm = this%radial_wavenumber(G, M)
+ !   this%Omegalm = this%local_frequency(G, M)
+ !   this%omglm = G%alpha * this%Omegalm - G%beta * this%klm
+ !   den = sign(max(abs(this%Omegalm), EPS), this%Omegalm)
+ !   this%vr = -G%beta + G%alpha * G%guu * this%klm / den
+ ! end if
     ! Carga Noether
   this%Accretion_Noether(idx) = this%Noether_rate(G, M)
   this%Noether(idx) = this%NC(G, M)
@@ -82,8 +80,7 @@ subroutine diagnostic_state(this, G, M, idx,hit)
 
 end subroutine diagnostic_state
 
-real(real64) function Noether_rate(this, G, M) result(dQdt)
-  use iso_fortran_env, only: real64
+real(kind=8) function Noether_rate(this, G, M) result(dQdt)
   use utils,          only: trapezium
   implicit none
 
@@ -92,11 +89,11 @@ real(real64) function Noether_rate(this, G, M) result(dQdt)
   class(mesh_t),     intent(in) :: M
 
   integer :: i_hor, Nr
-  complex(real64) :: flux
-  real(real64) :: r_hor, f_hor
+  complex(kind=8) :: flux
+  real(kind=8) :: r_hor, f_hor
 
   Nr = size(M%r)
-  r_hor = 1.0_real64
+  r_hor = 1.0d0
 
   ! Índices
   i_hor = nint( (r_hor - M%r(1)) / M%dr ) + 1
@@ -113,8 +110,7 @@ real(real64) function Noether_rate(this, G, M) result(dQdt)
 end function Noether_rate
 
 
-real(real64) function Noether_charge(this, G, M) result(Q)
-  use iso_fortran_env, only: real64
+real(kind=8) function Noether_charge(this, G, M) result(Q)
   use utils,          only: trapezium
   implicit none
 
@@ -126,7 +122,7 @@ real(real64) function Noether_charge(this, G, M) result(Q)
 
   Nr = size(M%r)
 
-  i_hor = nint( (1.0_real64 - M%r(1)) / M%dr ) + 1
+  i_hor = nint( (1.0d0 - M%r(1)) / M%dr ) + 1
   i_inf = nint( (300.0d0 - M%r(1)) / M%dr ) + 1
   i_hor = max(i_hor, 1)
 
@@ -136,14 +132,13 @@ real(real64) function Noether_charge(this, G, M) result(Q)
 end function Noether_charge
 
 function energy(this,G,M) result(rho_bar)
-  use iso_fortran_env, only: real64
   use utils,          only: trapezium
   implicit none
 
   class(state_t),    intent(in) :: this
   class(geometry_t), intent(in) :: G
   class(mesh_t),     intent(in) :: M
-  real(real64) :: rho_bar(M%Nr)
+  real(kind=8) :: rho_bar(M%Nr)
 
   rho_bar = &
     abs(this%pi)**2 + G%guu * abs(this%psi)**2 + &
@@ -152,43 +147,41 @@ function energy(this,G,M) result(rho_bar)
 end function
 
 function radial_wavenumber(this,G,M) result(k_r)
-  use iso_fortran_env, only: real64
   use utils,          only: trapezium
   implicit none
 
   class(state_t),    intent(in) :: this
   class(geometry_t), intent(in) :: G
   class(mesh_t),     intent(in) :: M
-  real(real64) :: k_r(M%Nr)
+  real(kind=8) :: k_r(M%Nr)
 
 
   k_r = &
-    1.0_real64 / max(abs(this%phi)**2,EPS) * aimag(conjg(this%phi) * this%psi)
+    1.0d0 / max(abs(this%phi)**2,EPS) * aimag(conjg(this%phi) * this%psi)
 end function
 
 function local_frequency(this,G,M) result(Omega)
-  use iso_fortran_env, only: real64
   use utils,          only: trapezium
   implicit none
 
   class(state_t),    intent(in) :: this
   class(geometry_t), intent(in) :: G
   class(mesh_t),     intent(in) :: M
-  real(real64) :: Omega(M%Nr)
+  real(kind=8) :: Omega(M%Nr)
 
   Omega = &
-    -1.0_real64 / max(abs(this%phi)**2,EPS) * aimag(conjg(this%phi) * this%pi)
+    -1.0d0 / max(abs(this%phi)**2,EPS) * aimag(conjg(this%phi) * this%pi)
 end function
 
 
   subroutine state_zero(this)
     class(state_t), intent(inout) :: this
-    this%phi = (0.0_real64, 0.0_real64)
-    this%psi = (0.0_real64, 0.0_real64)
-    this%pi  = (0.0_real64, 0.0_real64)
-    this%Noether = 0.0_real64
-    this%Accretion_Noether = 0.0_real64
-    this%energy_density = 0.0_real64
+    this%phi = (0.0d0, 0.0d0)
+    this%psi = (0.0d0, 0.0d0)
+    this%pi  = (0.0d0, 0.0d0)
+    this%Noether = 0.0d0
+    this%Accretion_Noether = 0.0d0
+!    this%energy_density = 0.0d0
   end subroutine
 
   subroutine state_info(this)
@@ -208,11 +201,11 @@ end function
     if (allocated(this%pi))  deallocate(this%pi)
     if (allocated(this%Noether)) deallocate(this%Noether)
     if (allocated(this%Accretion_Noether)) deallocate(this%Accretion_Noether)
-    if (allocated(this%energy_density)) deallocate(this%energy_density)
-    if (allocated(this%klm)) deallocate(this%klm)
-    if (allocated(this%Omegalm)) deallocate(this%Omegalm)
-    if (allocated(this%omglm)) deallocate(this%omglm)
-    if (allocated(this%vr)) deallocate(this%vr)
+ !   if (allocated(this%energy_density)) deallocate(this%energy_density)
+!    if (allocated(this%klm)) deallocate(this%klm)
+  !  if (allocated(this%Omegalm)) deallocate(this%Omegalm)
+  !  if (allocated(this%omglm)) deallocate(this%omglm)
+  !  if (allocated(this%vr)) deallocate(this%vr)
     this%Nr = 0
     this%Nt = 0
   end subroutine

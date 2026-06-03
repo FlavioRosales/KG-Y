@@ -1,5 +1,4 @@
 module rhs
-  use iso_fortran_env, only: real64
   use geometry,        only: geometry_t
   use mesh,            only: mesh_t
   use state,           only: state_t
@@ -19,11 +18,11 @@ contains
     class(geometry_t), intent(in)  :: G
     class(mesh_t),     intent(in)  :: M
     integer,           intent(in)  :: ell
-    real(real64),      intent(in)  :: mu
+    real(kind=8),      intent(in)  :: mu
     ! ---- Salidas ----
-    complex(real64),   intent(out) :: dphi_dt(:)
-    complex(real64),   intent(out) :: dpsi_dt(:)
-    complex(real64),   intent(out) :: dpi_dt(:)
+    complex(kind=8),   intent(out) :: dphi_dt(:)
+    complex(kind=8),   intent(out) :: dpsi_dt(:)
+    complex(kind=8),   intent(out) :: dpi_dt(:)
 
     ! --- Ecuación de φ:  ∂_t φ = α π + β ψ ---
     dphi_dt = G%alpha * S%pi + G%beta * S%psi

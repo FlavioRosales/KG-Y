@@ -1,5 +1,4 @@
 module mesh
-  use iso_fortran_env, only: real64
   use run_control
   implicit none
   private
@@ -7,11 +6,11 @@ module mesh
 
   type :: mesh_t
      integer :: Nr = 0
-     real(real64) :: rmin = 0.0_real64, rmax = 0.0_real64, dr = 0.0_real64
-     real(real64), allocatable :: r(:)
-     real(real64) :: dr_min = 0.0_real64, dr_max = 0.0_real64
+     real(kind=8) :: rmin = 0.0d0, rmax = 0.0d0, dr = 0.0d0
+     real(kind=8), allocatable :: r(:)
+     real(kind=8) :: dr_min = 0.0d0, dr_max = 0.0d0
      integer :: i_flat = 0
-     real(real64) :: r_flat = 0.0_real64
+     real(kind=8) :: r_flat = 0.0d0
      integer :: i_sl_first = 0, i_sl_last = 0
   end type mesh_t
 
@@ -20,9 +19,9 @@ contains
   subroutine build_mesh(M)
     type(mesh_t), intent(inout) :: M
     integer :: i, n_intervals, nr_sl, i_first, i_last
-    real(real64), allocatable :: r_sl(:)
-    real(real64) :: r_outer, rmin_req, rmax_req
-    real(real64), parameter :: eps = 1.0e-12_real64
+    real(kind=8), allocatable :: r_sl(:)
+    real(kind=8) :: r_outer, rmin_req, rmax_req
+    real(kind=8), parameter :: eps = 1.0d-12
 
     rmin_req = rmin_p
     rmax_req = rmax_p
@@ -72,7 +71,7 @@ contains
       M%dr_max = maxval(M%r(2:M%Nr) - M%r(1:M%Nr-1))
       M%dr = M%dr_min
     else
-      M%dr = 0.0_real64
+      M%dr = 0.0d0
     end if
 
     deallocate(r_sl)
@@ -98,18 +97,18 @@ contains
   end subroutine print_mesh_info
 
   subroutine count_sl_grid(r_target, n_intervals, r_outer)
-    real(real64), intent(in)  :: r_target
+    real(kind=8), intent(in)  :: r_target
     integer,      intent(out) :: n_intervals
-    real(real64), intent(out) :: r_outer
+    real(kind=8), intent(out) :: r_outer
 
-    real(real64) :: x, dx
-    real(real64), parameter :: eps = 1.0e-12_real64
+    real(kind=8) :: x, dx
+    real(kind=8), parameter :: eps = 1.0d-12
 
-    x = 0.0_real64
+    x = 0.0d0
     n_intervals = 0
     do while (x < r_target - eps)
       dx = next_dr(x, r_flat_p, dr_min_p, dr_max_p)
-      if (dx <= 0.0_real64) error stop "count_sl_grid: dx <= 0"
+      if (dx <= 0.0d0) error stop "count_sl_grid: dx <= 0"
       x = x + dx
       n_intervals = n_intervals + 1
     end do
@@ -118,15 +117,15 @@ contains
 
   subroutine build_sl_grid(n_intervals, r)
     integer,      intent(in)  :: n_intervals
-    real(real64), intent(out) :: r(0:n_intervals)
+    real(kind=8), intent(out) :: r(0:n_intervals)
 
     integer :: i
-    real(real64) :: dx
+    real(kind=8) :: dx
 
-    r(0) = 0.0_real64
+    r(0) = 0.0d0
     do i = 0, n_intervals - 1
       dx = next_dr(r(i), r_flat_p, dr_min_p, dr_max_p)
-      if (dx <= 0.0_real64) error stop "build_sl_grid: dx <= 0"
+      if (dx <= 0.0d0) error stop "build_sl_grid: dx <= 0"
       r(i+1) = r(i) + dx
     end do
   end subroutine build_sl_grid

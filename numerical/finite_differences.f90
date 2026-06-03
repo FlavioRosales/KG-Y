@@ -1,5 +1,4 @@
 module finite_differences
-  use iso_fortran_env, only: real64
   use geometry,        only: geometry_t
   use mesh,            only: mesh_t
   implicit none
@@ -34,22 +33,21 @@ contains
 ! Núcleos 2º ORDEN — derivada primera
 !===============================================================================
 subroutine first_x_2_u_sub(f, h, df)
-  use iso_fortran_env, only: real64
   implicit none
 
-  complex(real64), intent(in),  contiguous :: f(:)
-  real(real64),    intent(in)              :: h
-  complex(real64), intent(out), contiguous :: df(:)
+  complex(kind=8), intent(in),  contiguous :: f(:)
+  real(kind=8),    intent(in)              :: h
+  complex(kind=8), intent(out), contiguous :: df(:)
 
   integer       :: n, i
-  real(real64)  :: res
+  real(kind=8)  :: res
 
   n   = size(f)
-  res = 0.5_real64 / h
+  res = 0.5d0 / h
 
 
-  df(1) = (-3.0_real64*f(1) + 4.0_real64*f(2) - f(3)) * res
-  df(n) = ( 3.0_real64*f(n) - 4.0_real64*f(n-1) + f(n-2)) * res
+  df(1) = (-3.0d0*f(1) + 4.0d0*f(2) - f(3)) * res
+  df(n) = ( 3.0d0*f(n) - 4.0d0*f(n-1) + f(n-2)) * res
 
   !do i = 2, n-1
   !  df(i) = (f(i+1) - f(i-1)) * res
@@ -60,16 +58,15 @@ subroutine first_x_2_u_sub(f, h, df)
 end subroutine first_x_2_u_sub
 
 subroutine first_x_2_n_sub(f, x, df)
-  use iso_fortran_env, only: real64
   implicit none
 
-  complex(real64), intent(in),  contiguous :: f(:)
-  real(real64),    intent(in),  contiguous :: x(:)
-  complex(real64), intent(out), contiguous :: df(:)
+  complex(kind=8), intent(in),  contiguous :: f(:)
+  real(kind=8),    intent(in),  contiguous :: x(:)
+  complex(kind=8), intent(out), contiguous :: df(:)
 
   integer :: i, n
-  real(real64) :: h0, h1
-  real(real64) :: a, b, c
+  real(kind=8) :: h0, h1
+  real(kind=8) :: a, b, c
 
   n = size(f)
 
@@ -81,7 +78,7 @@ subroutine first_x_2_n_sub(f, x, df)
   h0 = x(2) - x(1)
   h1 = x(3) - x(2)
 
-  a = -(2.0_real64*h0 + h1)/(h0*(h0 + h1))
+  a = -(2.0d0*h0 + h1)/(h0*(h0 + h1))
   b =  (h0 + h1)/(h0*h1)
   c = -h0/(h1*(h0 + h1))
 
@@ -103,7 +100,7 @@ subroutine first_x_2_n_sub(f, x, df)
   h0 = x(n)   - x(n-1)
   h1 = x(n-1) - x(n-2)
 
-  a =  (2.0_real64*h0 + h1)/(h0*(h0 + h1))
+  a =  (2.0d0*h0 + h1)/(h0*(h0 + h1))
   b = -(h0 + h1)/(h0*h1)
   c =  h0/(h1*(h0 + h1))
 
@@ -112,27 +109,26 @@ subroutine first_x_2_n_sub(f, x, df)
 end subroutine first_x_2_n_sub
 
 subroutine first_x_2_hybrid_sub(f, M, df)
-  use iso_fortran_env, only: real64
   implicit none
 
-  complex(real64), intent(in),  contiguous :: f(:)
+  complex(kind=8), intent(in),  contiguous :: f(:)
   type(mesh_t),    intent(in)              :: M
-  complex(real64), intent(out), contiguous :: df(:)
+  complex(kind=8), intent(out), contiguous :: df(:)
 
   integer :: i, n
-  real(real64) :: h0, h1, res
-  real(real64) :: a, b, c
+  real(kind=8) :: h0, h1, res
+  real(kind=8) :: a, b, c
 
   n = size(f)
 
 
-  res = 0.5_real64 / M%dr_max
+  res = 0.5d0 / M%dr_max
 
   ! Región no uniforme: usamos los nodos reales de M%r hasta antes de i_flat.
   h0 = M%r(2) - M%r(1)
   h1 = M%r(3) - M%r(2)
 
-  a = -(2.0_real64*h0 + h1)/(h0*(h0 + h1))
+  a = -(2.0d0*h0 + h1)/(h0*(h0 + h1))
   b =  (h0 + h1)/(h0*h1)
   c = -h0/(h1*(h0 + h1))
 
@@ -151,17 +147,16 @@ subroutine first_x_2_hybrid_sub(f, M, df)
 
   df(M%i_flat:n-1) = (f(M%i_flat+1:n) - f(M%i_flat-1:n-2)) * res
 
-  df(n) = (3.0_real64*f(n) - 4.0_real64*f(n-1) + f(n-2)) * res
+  df(n) = (3.0d0*f(n) - 4.0d0*f(n-1) + f(n-2)) * res
 
 end subroutine first_x_2_hybrid_sub
 
 subroutine first_x_2_hybrid(f, M, df)
-  use iso_fortran_env, only: real64
   implicit none
 
-  complex(real64), intent(in),  contiguous :: f(:)
+  complex(kind=8), intent(in),  contiguous :: f(:)
   type(mesh_t),    intent(in)              :: M
-  complex(real64), intent(out), contiguous :: df(:)
+  complex(kind=8), intent(out), contiguous :: df(:)
 
   call first_x_2_hybrid_sub(f, M, df)
 end subroutine first_x_2_hybrid
@@ -172,36 +167,34 @@ end subroutine first_x_2_hybrid
 !===============================================================================
 
 subroutine advec_x_u_sub(f, beta, dx, df)
-  use iso_fortran_env, only: real64
   implicit none
 
-  complex(real64), intent(in),  contiguous :: f(:)
-  real(real64), intent(in),  contiguous :: beta(:)
-  real(real64),    intent(in)              :: dx
-  complex(real64), intent(out), contiguous :: df(:)
+  complex(kind=8), intent(in),  contiguous :: f(:)
+  real(kind=8), intent(in),  contiguous :: beta(:)
+  real(kind=8),    intent(in)              :: dx
+  complex(kind=8), intent(out), contiguous :: df(:)
 
-  real(real64)  :: res
+  real(kind=8)  :: res
   integer       :: n
 
   n   = size(f)
-  res = 0.5_real64 / dx
+  res = 0.5d0 / dx
 
   df(n-1) = (( f(n) - f(n-1))/dx )*beta(n-1)
-  df(1:n-2) = ((-3.0_real64*f(1:n-2) + 4.0_real64*f(2:n-1) - f(3:n)) * res ) * beta(1:n-2)
-  df(n) = ((3.0_real64*f(n) - 4.0_real64*f(n-1) + f(n-2)) * res) * beta(n)
+  df(1:n-2) = ((-3.0d0*f(1:n-2) + 4.0d0*f(2:n-1) - f(3:n)) * res ) * beta(1:n-2)
+  df(n) = ((3.0d0*f(n) - 4.0d0*f(n-1) + f(n-2)) * res) * beta(n)
 end subroutine advec_x_u_sub
 
 subroutine advec_x_n_sub(f, beta, x, df)
-  use iso_fortran_env, only: real64
   implicit none
 
-  complex(real64), intent(in),  contiguous :: f(:)
-  real(real64),    intent(in),  contiguous :: x(:)
-  real(real64),    intent(in),  contiguous :: beta(:)
-  complex(real64), intent(out), contiguous :: df(:)
+  complex(kind=8), intent(in),  contiguous :: f(:)
+  real(kind=8),    intent(in),  contiguous :: x(:)
+  real(kind=8),    intent(in),  contiguous :: beta(:)
+  complex(kind=8), intent(out), contiguous :: df(:)
 
   integer :: n, i
-  real(real64) :: h0, h1, denom
+  real(kind=8) :: h0, h1, denom
 
   n = size(f)
 
@@ -214,7 +207,7 @@ subroutine advec_x_n_sub(f, beta, x, df)
     denom = h0*h1*(h0 + h1)
 
     df(i) = beta(i) * ( &
-         -(2.0_real64*h0 + h1)*h1*f(i) &
+         -(2.0d0*h0 + h1)*h1*f(i) &
          + (h0 + h1)**2*f(i+1)          &
          - h0**2*f(i+2)                 &
          ) / denom
@@ -251,7 +244,7 @@ subroutine advec_x_n_sub(f, beta, x, df)
   denom = h0*h1*(h0 + h1)
 
   df(n) = beta(n) * ( &
-       (2.0_real64*h0 + h1)*h1*f(n) &
+       (2.0d0*h0 + h1)*h1*f(n) &
        - (h0 + h1)**2*f(n-1)        &
        + h0**2*f(n-2)               &
        ) / denom
@@ -259,22 +252,19 @@ subroutine advec_x_n_sub(f, beta, x, df)
 end subroutine advec_x_n_sub
 
 subroutine advec_x_hybrid_sub(f, G, M, df)
-  use iso_fortran_env, only: real64
   implicit none
 
-  complex(real64), intent(in),  contiguous :: f(:)
+  complex(kind=8), intent(in),  contiguous :: f(:)
   type(geometry_t), intent(in)             :: G
   type(mesh_t),     intent(in)             :: M
-  complex(real64), intent(out), contiguous :: df(:)
+  complex(kind=8), intent(out), contiguous :: df(:)
 
   integer :: n, i
-  real(real64) :: h0, h1, denom, res
+  real(kind=8) :: h0, h1, denom, res
 
   n = size(f)
-
-
-
-  res = 0.5_real64 / M%dr_max
+  
+  res = 0.5d0 / M%dr_max
 
   do i = 1, M%i_flat - 1
     h0 = M%r(i+1) - M%r(i)
@@ -283,32 +273,31 @@ subroutine advec_x_hybrid_sub(f, G, M, df)
     denom = h0*h1*(h0 + h1)
 
     df(i) = G%beta(i) * ( &
-         -(2.0_real64*h0 + h1)*h1*f(i) &
+         -(2.0d0*h0 + h1)*h1*f(i) &
          + (h0 + h1)**2*f(i+1)          &
          - h0**2*f(i+2)                 &
          ) / denom
   end do
 
   df(M%i_flat:n-2) = G%beta(M%i_flat:n-2) * ( &
-        -3.0_real64*f(M%i_flat:n-2) &
-        + 4.0_real64*f(M%i_flat+1:n-1) &
+        -3.0d0*f(M%i_flat:n-2) &
+        + 4.0d0*f(M%i_flat+1:n-1) &
         - f(M%i_flat+2:n) ) * res
 
   df(n-1) = G%beta(n-1) * (f(n) - f(n-2)) * res
   df(n) = G%beta(n) * ( &
-       3.0_real64*f(n) - 4.0_real64*f(n-1) + f(n-2) &
+       3.0d0*f(n) - 4.0d0*f(n-1) + f(n-2) &
        ) * res
 
 end subroutine advec_x_hybrid_sub
 
 subroutine advec_x_hybrid(f, G, M, df)
-  use iso_fortran_env, only: real64
   implicit none
 
-  complex(real64), intent(in),  contiguous :: f(:)
+  complex(kind=8), intent(in),  contiguous :: f(:)
   type(geometry_t), intent(in)             :: G
   type(mesh_t),     intent(in)             :: M
-  complex(real64), intent(out), contiguous :: df(:)
+  complex(kind=8), intent(out), contiguous :: df(:)
 
   call advec_x_hybrid_sub(f, G, M, df)
 end subroutine advec_x_hybrid
@@ -319,47 +308,47 @@ end subroutine advec_x_hybrid
 !===============================================================================
 
 function first_x_2_u(f, h) result(df)
-    complex(real64), intent(in) :: f(:)
-    real(real64),    intent(in) :: h
-    complex(real64) :: df(size(f))
+    complex(kind=8), intent(in) :: f(:)
+    real(kind=8),    intent(in) :: h
+    complex(kind=8) :: df(size(f))
     call first_x_2_u_sub(f, h, df)
   end function first_x_2_u
 
 function first_x_2_n(f, x) result(df)
-    complex(real64), intent(in) :: f(:)
-    real(real64),    intent(in) :: x(:)
-    complex(real64) :: df(size(f))
+    complex(kind=8), intent(in) :: f(:)
+    real(kind=8),    intent(in) :: x(:)
+    complex(kind=8) :: df(size(f))
     call first_x_2_n_sub(f, x, df)
   end function first_x_2_n
 
 function first_x_2_hybrid_fn(f, M) result(df)
-    complex(real64), intent(in) :: f(:)
+    complex(kind=8), intent(in) :: f(:)
     type(mesh_t),    intent(in) :: M
-    complex(real64) :: df(size(f))
+    complex(kind=8) :: df(size(f))
     call first_x_2_hybrid_sub(f, M, df)
   end function first_x_2_hybrid_fn
 
 function advec_x_u(f, beta, dx) result(df)
-    complex(real64), intent(in) :: f(:)
-    real(real64), intent(in) :: beta(:)
-    real(real64),    intent(in) :: dx
-    complex(real64) :: df(size(f))
+    complex(kind=8), intent(in) :: f(:)
+    real(kind=8), intent(in) :: beta(:)
+    real(kind=8),    intent(in) :: dx
+    complex(kind=8) :: df(size(f))
     call advec_x_u_sub(f, beta, dx, df)
   end function advec_x_u
 
 function advec_x_n(f, beta, x) result(df)
-    complex(real64), intent(in) :: f(:)
-    real(real64), intent(in) :: beta(:)
-    real(real64),    intent(in) :: x(:)
-    complex(real64) :: df(size(f))
+    complex(kind=8), intent(in) :: f(:)
+    real(kind=8), intent(in) :: beta(:)
+    real(kind=8),    intent(in) :: x(:)
+    complex(kind=8) :: df(size(f))
     call advec_x_n_sub(f, beta, x, df)
 end function advec_x_n
 
 function advec_x_hybrid_fn(f, G, M) result(df)
-    complex(real64), intent(in) :: f(:)
+    complex(kind=8), intent(in) :: f(:)
     type(geometry_t), intent(in) :: G
     type(mesh_t),     intent(in) :: M
-    complex(real64) :: df(size(f))
+    complex(kind=8) :: df(size(f))
     call advec_x_hybrid_sub(f, G, M, df)
 end function advec_x_hybrid_fn
 

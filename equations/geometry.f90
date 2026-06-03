@@ -1,7 +1,6 @@
 module geometry
   !! Geometría OOP: arreglos métricos (centros e interfaces) y sus derivadas.
   !! Unidades geométricas: G = c = 1  → Rs = 2*M_bh
-  use iso_fortran_env, only: real64
   implicit none
   private
   public :: geometry_t
@@ -10,12 +9,12 @@ module geometry
      ! Parámetros
      integer :: ell = 0          ! multipolo ℓ
      integer :: Nr  = 0          ! número de celdas / puntos
-     real(real64) :: M_bh = 0.5  ! masa del BH (unidades geométricas)
+     real(kind=8) :: M_bh = 0.5d0  ! masa del BH (unidades geométricas)
 
      ! Centros (tamaño Nr)
-     real(real64), allocatable :: alpha(:), beta(:), grr(:), guu(:), Vell_c(:)
-     real(real64), allocatable :: dalpha(:), dbeta(:), dgrr(:), dguu(:)
-     real(real64), allocatable :: K_c(:)
+     real(kind=8), allocatable :: alpha(:), beta(:), grr(:), guu(:), Vell_c(:)
+     real(kind=8), allocatable :: dalpha(:), dbeta(:), dgrr(:), dguu(:)
+     real(kind=8), allocatable :: K_c(:)
 
    contains
      procedure :: init => geom_init
@@ -29,8 +28,8 @@ contains
   subroutine geom_init(this, r, M_bh)
     !! Inicializa y construye geometría en centros e interfaces.
     class(geometry_t), intent(inout) :: this
-    real(real64),      intent(in)    :: r(:)
-    real(real64),      intent(in),   optional :: M_bh
+    real(kind=8),      intent(in)    :: r(:)
+    real(kind=8),      intent(in),   optional :: M_bh
 
     this%Nr = size(r)
     if (present(M_bh)) this%M_bh = M_bh
@@ -40,20 +39,20 @@ contains
 
   subroutine geom_build(this, r)
     class(geometry_t), intent(inout) :: this
-    real(real64),      intent(in)    :: r(:)
+    real(kind=8),      intent(in)    :: r(:)
 
     integer :: i, n
-    real(real64) :: rr, Rs, dr_loc
+    real(kind=8) :: rr, Rs, dr_loc
 
     n        = size(r)
     this%Nr  = n
-    Rs       = 2.0_real64 * this%M_bh           ! radio de Schwarzschild
+    Rs       = 2.0d0 * this%M_bh           ! radio de Schwarzschild
 
     ! Paso local (asumimos malla uniforme)
     if (n > 1) then
        dr_loc = r(2) - r(1)
     else
-       dr_loc = 0.0_real64
+       dr_loc = 0.0d0
     end if
 
     ! (Re)asigna arreglos de centros
@@ -72,20 +71,20 @@ contains
       rr = r(i)
 
       ! Métrica en centros
-      this%grr(i)    = 1.0_real64 + Rs/rr                 ! gamma_rr
-      this%alpha(i)  = (this%grr(i))**(-0.5_real64)       ! alpha(r) = 1 / sqrt(1 + Rs/r)
+      this%grr(i)    = 1.0d0 + Rs/rr                 ! gamma_rr
+      this%alpha(i)  = (this%grr(i))**(-0.5d0)       ! alpha(r) = 1 / sqrt(1 + Rs/r)
       this%beta(i)   = Rs / (rr * this%grr(i))            ! beta^r
-      this%guu(i)    = 1.0_real64 / this%grr(i)           ! gamma^rr
+      this%guu(i)    = 1.0d0 / this%grr(i)           ! gamma^rr
 
       ! Derivadas analíticas
-      this%dalpha(i) = 0.5_real64 * this%alpha(i)**3 * Rs / (rr**2)
+      this%dalpha(i) = 0.5d0 * this%alpha(i)**3 * Rs / (rr**2)
       this%dgrr(i)   = -Rs / rr**2
-      this%dguu(i)   = -1.0_real64 / (this%grr(i)**2) * this%dgrr(i)
-      this%dbeta(i)  = -this%beta(i) * ( 1.0_real64/rr + this%dgrr(i)/this%grr(i) )
+      this%dguu(i)   = -1.0d0 / (this%grr(i)**2) * this%dgrr(i)
+      this%dbeta(i)  = -this%beta(i) * ( 1.0d0/rr + this%dgrr(i)/this%grr(i) )
       ! Curvatura extrínseca
       this%K_c(i) = ( this%dbeta(i)                                   &
-              + 0.5_real64 * this%beta(i) * this%dgrr(i) / this%grr(i) &
-              + 2.0_real64/rr * this%beta(i) ) / this%alpha(i)
+              + 0.5d0 * this%beta(i) * this%dgrr(i) / this%grr(i) &
+              + 2.0d0/rr * this%beta(i) ) / this%alpha(i)
 
     end do
 
@@ -116,12 +115,12 @@ contains
 
     this%Nr  = 0
     this%ell = 0
-    this%M_bh = 0.5_real64
+    this%M_bh = 0.5d0
   end subroutine geom_free
 
   ! ===== Helpers =====
   subroutine safe_resize(a, n)
-    real(real64), allocatable, intent(inout) :: a(:)
+    real(kind=8), allocatable, intent(inout) :: a(:)
     integer,                intent(in)       :: n
     if (allocated(a)) then
        if (size(a) /= n) then
@@ -133,7 +132,7 @@ contains
   end subroutine safe_resize
 
   subroutine safe_dealloc(a)
-    real(real64), allocatable, intent(inout) :: a(:)
+    real(kind=8), allocatable, intent(inout) :: a(:)
     if (allocated(a)) deallocate(a)
   end subroutine safe_dealloc
 
