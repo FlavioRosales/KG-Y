@@ -63,7 +63,7 @@ subroutine diagnostic_state(this, G, M, idx,hit)
   class(mesh_t),     intent(in)    :: M
   integer,           intent(in)    :: idx
   logical,           intent(in)    :: hit
-  real(kind=8) :: den(M%Nr)
+  !real(kind=8) :: den(M%Nr)
 
 !  if(hit) then
  !   this%energy_density = this%energy(G, M)
@@ -142,7 +142,7 @@ function energy(this,G,M) result(rho_bar)
 
   rho_bar = &
     abs(this%pi)**2 + G%guu * abs(this%psi)**2 + &
-    this%mu_field**2  +  (this%ell * (this%ell + 1) / M%r*2 ) * abs(this%phi)**2
+    this%mu_field**2  +  (this%ell * (this%ell + 1) / M%r**2 ) * abs(this%phi)**2
 
 end function
 

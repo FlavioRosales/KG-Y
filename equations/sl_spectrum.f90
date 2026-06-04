@@ -36,8 +36,7 @@ contains
     z2 = s*sin(2.0d0*PI*u2)
   end subroutine randn2
 
-  function Clmn_amp(ell, m, n, lambda_n) result(C)
-    integer,      intent(in) :: ell, m, n
+  function Clmn_amp(lambda_n) result(C)
     real(kind=8), intent(in) :: lambda_n
     complex(kind=8)          :: C
     real(kind=8) :: k, std, z1, z2
@@ -46,7 +45,7 @@ contains
     std = dsqrt(max(P_of_k(k), 0.0d0))
 
     call randn2(z1, z2)  ! z1,z2 ~ N(0,1)
-    C = std * cmplx(z1, z2) / sqrt(2.0d0)
+    C = std * dcmplx(z1, z2) / sqrt(2.0d0)
   end function Clmn_amp
 
 end module sl_spectrum

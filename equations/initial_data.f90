@@ -23,10 +23,8 @@ contains
 !-------------------------------------------------------------------
   !  IC: paquete gaussiano entrante (aprox) con carga de Noether positiva
 !-------------------------------------------------------------------
-  subroutine set_IC_incoming_gaussian_positive_charge(ell, m, k0, mu_field, S, G, Mesh)
-    integer,      intent(in)    :: ell, m
+  subroutine set_IC_incoming_gaussian_positive_charge(k0, S, G, Mesh)
     real(kind=8), intent(in)    :: k0
-    real(kind=8), intent(in)    :: mu_field
     type(state_t),    intent(inout) :: S
     type(geometry_t), intent(in)    :: G
     type(mesh_t),     intent(in)    :: Mesh
@@ -36,7 +34,7 @@ contains
     complex(kind=8) :: ci
 
     Nr  = size(Mesh%r)
-    ci  = cmplx(0.0d0, 1.0d0)
+    ci  = dcmplx(0.0d0, 1.0d0)
     mu0 = 80.0d0
     sigma = 10.0d0
 
@@ -47,27 +45,26 @@ contains
       env   =  dexp(-0.5d0 * x**2)
       phase = -k0 * Mesh%r(i) 
       
-      S%phi(i) = cmplx(env * cos(phase), env * sin(phase))
+      S%phi(i) = dcmplx(env * dcos(phase), env * dsin(phase))
     end do
 
     S%psi = dx(S%phi, Mesh)
 
     S%pi  = dsqrt(G%guu) * S%psi
 
-    !Mass_field = mu_field*S%NC(G,Mesh)
     Mass_field = S%NC(G,Mesh)
 
     A = G%M_bh / Mass_field
 
-    S%phi = sqrt(A) * S%phi
-    S%psi = sqrt(A) * S%psi
-    S%pi  = sqrt(A) * S%pi
+    S%phi = dsqrt(A) * S%phi
+    S%psi = dsqrt(A) * S%psi
+    S%pi  = dsqrt(A) * S%pi
 
     
 
   end subroutine set_IC_incoming_gaussian_positive_charge
 
-subroutine set_IC_mode_from_SL(ell, m, lambda, eigenR, S, G, Mesh)
+subroutine set_IC_mode_from_SL(lambda, eigenR, S, G, Mesh)
   !!
   !! IC complejas para un modo (ell,m):
   !!   phi(r_i) = sum_n C_n * R(i,n)
@@ -77,38 +74,28 @@ subroutine set_IC_mode_from_SL(ell, m, lambda, eigenR, S, G, Mesh)
   use sl_spectrum,     only: Clmn_amp
   implicit none
 
-  integer,      intent(in)    :: ell, m
   real(kind=8), intent(in)    :: lambda(:), eigenR(:,:)
-  real(kind=8)  :: Mass_field, A
   type(state_t),        intent(inout) :: S
   type(geometry_t),     intent(in) :: G
   type(mesh_t),     intent(in) :: Mesh
+  integer :: n
 
-  integer :: n, i
-  complex(kind=8), allocatable :: C(:)
 
-  allocate(C(size(lambda)))
-
-  ! --- coeficientes C_n (complejos gaussianos con varianza P(k))
-  do n = 1, size(lambda)
-    C(n) = Clmn_amp(ell, m, n, lambda(n))
-  end do
 
   do n = 1, size(lambda)
-        S%phi = S%phi + C(n) * eigenR(:,n)
+        S%phi = S%phi + Clmn_amp(lambda(n)) * eigenR(:,n)
   end do
 
-  deallocate(C)
 
   S%phi = S%phi * exp(- (Mesh%r - 80.0d0)**2 / (2.0d0 * 20.0d0**2) ) 
   S%psi = dx(S%phi, Mesh)
-  S%pi = cmplx( sqrt(G%guu), 0.0d0 ) * S%psi
+  S%pi = dcmplx( dsqrt(G%guu), 0.0d0 ) * S%psi
 
 
 
 end subroutine set_IC_mode_from_SL
 
-subroutine mode_from_SL_all(ell, m, mu, lambda, eigenR, S, G, Mesh)
+subroutine mode_from_SL_all(mu, lambda, eigenR, S, Mesh)
   !!
   !! IC complejas para un modo (ell,m):
   !!   phi(r_i) = sum_n C_n * R(i,n)
@@ -118,32 +105,20 @@ subroutine mode_from_SL_all(ell, m, mu, lambda, eigenR, S, G, Mesh)
   use sl_spectrum,     only: Clmn_amp
   implicit none
 
-  integer,      intent(in)    :: ell, m
   real(kind=8), intent(in)    :: lambda(:), eigenR(:,:)
   real(kind=8), intent(in)    :: mu
   type(state_t),        intent(inout) :: S
-  type(geometry_t),     intent(in) :: G
   type(mesh_t),     intent(in) :: Mesh
 
   integer :: n
-  complex(kind=8), allocatable :: C(:)
   complex(kind=8) :: Omega_ln
-  complex(kind=8), parameter :: imag_unit = cmplx(0.0d0, 1.0d0)
-
-  allocate(C(size(lambda)))
-
-  ! --- coeficientes C_n (complejos gaussianos con varianza P(k))
-  do n = 1, size(lambda)
-    C(n) = Clmn_amp(ell, m, n, lambda(n))
-  end do
+  complex(kind=8), parameter :: imag_unit = dcmplx(0.0d0, 1.0d0)
 
   do n = 1, size(lambda)
-        Omega_ln = cmplx(dsqrt(mu**2 + lambda(n)), 0.0d0)
-        S%phi = S%phi + C(n) * eigenR(:,n)
-        S%pi = S%pi - imag_unit * Omega_ln * C(n) * eigenR(:,n)
+        Omega_ln = dcmplx(dsqrt(mu**2 + lambda(n)), 0.0d0)
+        S%phi = S%phi + Clmn_amp(lambda(n)) * eigenR(:,n)
+        S%pi = S%pi - imag_unit * Omega_ln * Clmn_amp(lambda(n)) * eigenR(:,n)
   end do
-
-  deallocate(C)
 
   S%psi = dx(S%phi, Mesh)
 
