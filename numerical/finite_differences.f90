@@ -1,80 +1,75 @@
 module finite_differences
-  use geometry,        only: geometry_t
-  use mesh,            only: mesh_t
+  use geometry, only: geometry_t
+  use mesh,     only: mesh_t
   implicit none
   private
+  integer, parameter :: Re = 1, Im = 2
+  public :: first_derivative_x_2, advec_x, advec_full, first_derivative_escaled
 
-  !===============================
-  !  API pública
-  !===============================
-  public :: first_derivative_x_2
-  public :: advec_x
-  public :: first_x_2_u_sub, first_x_2_n_sub, first_x_2_hybrid_sub
-  public :: advec_x_u_sub, advec_x_n_sub, advec_x_hybrid_sub
-  public :: first_x_2_hybrid, advec_x_hybrid
-
-  !--- interfaces de usuario ---
   interface first_derivative_x_2
-    module procedure first_x_2_u
-    module procedure first_x_2_n
-    module procedure first_x_2_hybrid_fn
+     module procedure first_x_2_u 
+     module procedure first_x_2_n
+     module procedure first_x_2_hybrid
   end interface
-
 
   interface advec_x
-    module procedure advec_x_u
-    module procedure advec_x_n
-    module procedure advec_x_hybrid_fn
+     module procedure advec_x_u
+     module procedure advec_x_n
+     module procedure advec_x_hybrid
   end interface
 
+  interface advec_full
+     module procedure advec_full_hybrid
+  end interface
+
+  interface first_derivative_escaled
+      module procedure first_derivative_escaled_hybrid
+      module procedure derivative_escaled_hybrid_product
+  end interface
 
 contains
+
 !===============================================================================
-! Núcleos 2º ORDEN — derivada primera
+! Derivada primera uniforme — complejo 1D
 !===============================================================================
-subroutine first_x_2_u_sub(f, h, df)
+function first_x_2_u(f, h) result(df)
   implicit none
 
-  complex(kind=8), intent(in),  contiguous :: f(:)
+  real(kind=8), intent(in),  contiguous :: f(:)
   real(kind=8),    intent(in)              :: h
-  complex(kind=8), intent(out), contiguous :: df(:)
+  real(kind=8) :: df(size(f))
 
-  integer       :: n, i
-  real(kind=8)  :: res
+  integer      :: n
+  real(kind=8) :: res
 
   n   = size(f)
   res = 0.5d0 / h
 
-
   df(1) = (-3.0d0*f(1) + 4.0d0*f(2) - f(3)) * res
-  df(n) = ( 3.0d0*f(n) - 4.0d0*f(n-1) + f(n-2)) * res
-
-  !do i = 2, n-1
-  !  df(i) = (f(i+1) - f(i-1)) * res
-  !end do
 
   df(2:n-1) = (f(3:n) - f(1:n-2)) * res
 
-end subroutine first_x_2_u_sub
+  df(n) = (3.0d0*f(n) - 4.0d0*f(n-1) + f(n-2)) * res
 
-subroutine first_x_2_n_sub(f, x, df)
+end function first_x_2_u
+
+
+!===============================================================================
+! Derivada primera no uniforme — complejo 1D
+!===============================================================================
+function first_x_2_n(f, x) result(df)
   implicit none
 
-  complex(kind=8), intent(in),  contiguous :: f(:)
+  real(kind=8), intent(in),  contiguous :: f(:)
   real(kind=8),    intent(in),  contiguous :: x(:)
-  complex(kind=8), intent(out), contiguous :: df(:)
+  real(kind=8) :: df(size(f))
 
-  integer :: i, n
+  integer      :: i, n
   real(kind=8) :: h0, h1
   real(kind=8) :: a, b, c
 
   n = size(f)
 
-  if (size(x) /= n) error stop "first_x_2_n_sub: size(x) /= size(f)"
-  if (size(df) /= n) error stop "first_x_2_n_sub: size(df) /= size(f)"
-  if (n < 3) error stop "first_x_2_n_sub: n must be at least 3"
-
-  ! Forward en i = 1
   h0 = x(2) - x(1)
   h1 = x(3) - x(2)
 
@@ -84,19 +79,17 @@ subroutine first_x_2_n_sub(f, x, df)
 
   df(1) = a*f(1) + b*f(2) + c*f(3)
 
-  ! Centrada en puntos interiores
   do i = 2, n-1
-    h0 = x(i)   - x(i-1)
-    h1 = x(i+1) - x(i)
+     h0 = x(i)   - x(i-1)
+     h1 = x(i+1) - x(i)
 
-    a = -h1/(h0*(h0 + h1))
-    b =  (h1 - h0)/(h0*h1)
-    c =  h0/(h1*(h0 + h1))
+     a = -h1/(h0*(h0 + h1))
+     b =  (h1 - h0)/(h0*h1)
+     c =  h0/(h1*(h0 + h1))
 
-    df(i) = a*f(i-1) + b*f(i) + c*f(i+1)
+     df(i) = a*f(i-1) + b*f(i) + c*f(i+1)
   end do
 
-  ! Backward en i = n
   h0 = x(n)   - x(n-1)
   h1 = x(n-1) - x(n-2)
 
@@ -106,121 +99,106 @@ subroutine first_x_2_n_sub(f, x, df)
 
   df(n) = a*f(n) + b*f(n-1) + c*f(n-2)
 
-end subroutine first_x_2_n_sub
+end function first_x_2_n
 
-subroutine first_x_2_hybrid_sub(f, M, df)
+
+!===============================================================================
+! Derivada primera híbrida
+!
+! Requiere en mesh_t:
+!   M%d1_a(:), M%d1_b(:), M%d1_c(:)
+!   M%inv_2dr_max
+!===============================================================================
+function first_x_2_hybrid(f, M) result(df)
   implicit none
 
-  complex(kind=8), intent(in),  contiguous :: f(:)
-  type(mesh_t),    intent(in)              :: M
-  complex(kind=8), intent(out), contiguous :: df(:)
+  real(kind=8), intent(in),  contiguous :: f(:,:)
+  type(mesh_t), intent(in)              :: M
+  real(kind=8) :: df(size(f,1),size(f,2))
 
-  integer :: i, n
-  real(kind=8) :: h0, h1, res
-  real(kind=8) :: a, b, c
+  integer      :: i, n, i_flat
+  real(kind=8) :: res
 
-  n = size(f)
+  n      = size(f,1)
+  i_flat = M%i_flat
+  res    = M%inv_2dr_max
 
+  df(1,Re) = M%d1_a(1)*f(1,Re) + M%d1_b(1)*f(2,Re) + M%d1_c(1)*f(3,Re)
+  df(1,Im) = M%d1_a(1)*f(1,Im) + M%d1_b(1)*f(2,Im) + M%d1_c(1)*f(3,Im)
 
-  res = 0.5d0 / M%dr_max
-
-  ! Región no uniforme: usamos los nodos reales de M%r hasta antes de i_flat.
-  h0 = M%r(2) - M%r(1)
-  h1 = M%r(3) - M%r(2)
-
-  a = -(2.0d0*h0 + h1)/(h0*(h0 + h1))
-  b =  (h0 + h1)/(h0*h1)
-  c = -h0/(h1*(h0 + h1))
-
-  df(1) = a*f(1) + b*f(2) + c*f(3)
-
-  do i = 2, M%i_flat - 1
-    h0 = M%r(i)   - M%r(i-1)
-    h1 = M%r(i+1) - M%r(i)
-
-    a = -h1/(h0*(h0 + h1))
-    b =  (h1 - h0)/(h0*h1)
-    c =  h0/(h1*(h0 + h1))
-
-    df(i) = a*f(i-1) + b*f(i) + c*f(i+1)
+  do concurrent (i = 2:i_flat-1)
+     df(i,Re) = M%d1_a(i)*f(i-1,Re) + M%d1_b(i)*f(i,Re) + M%d1_c(i)*f(i+1,Re)
+     df(i,Im) = M%d1_a(i)*f(i-1,Im) + M%d1_b(i)*f(i,Im) + M%d1_c(i)*f(i+1,Im)
   end do
 
-  df(M%i_flat:n-1) = (f(M%i_flat+1:n) - f(M%i_flat-1:n-2)) * res
+  do concurrent (i = i_flat:n-1)
+     df(i,Re) = (f(i+1,Re) - f(i-1,Re)) * res
+     df(i,Im) = (f(i+1,Im) - f(i-1,Im)) * res
+  end do
 
-  df(n) = (3.0d0*f(n) - 4.0d0*f(n-1) + f(n-2)) * res
+  df(n,Re) = (3.0d0*f(n,Re) - 4.0d0*f(n-1,Re) + f(n-2,Re)) * res
+  df(n,Im) = (3.0d0*f(n,Im) - 4.0d0*f(n-1,Im) + f(n-2,Im)) * res
 
-end subroutine first_x_2_hybrid_sub
-
-subroutine first_x_2_hybrid(f, M, df)
-  implicit none
-
-  complex(kind=8), intent(in),  contiguous :: f(:)
-  type(mesh_t),    intent(in)              :: M
-  complex(kind=8), intent(out), contiguous :: df(:)
-
-  call first_x_2_hybrid_sub(f, M, df)
-end subroutine first_x_2_hybrid
+end function first_x_2_hybrid
 
 
 !===============================================================================
-! Advección df/dx — 2º ORDEN
+! Advección uniforme — complejo 1D
 !===============================================================================
-
-subroutine advec_x_u_sub(f, beta, dx, df)
+function advec_x_u(f, beta, dx) result(df)
   implicit none
 
-  complex(kind=8), intent(in),  contiguous :: f(:)
+  real(kind=8), intent(in),  contiguous :: f(:)
   real(kind=8), intent(in),  contiguous :: beta(:)
-  real(kind=8),    intent(in)              :: dx
-  complex(kind=8), intent(out), contiguous :: df(:)
+  real(kind=8), intent(in)              :: dx
+  real(kind=8) :: df(size(f))
 
-  real(kind=8)  :: res
-  integer       :: n
+  integer      :: n
+  real(kind=8) :: res
 
   n   = size(f)
   res = 0.5d0 / dx
 
-  df(n-1) = (( f(n) - f(n-1))/dx )*beta(n-1)
-  df(1:n-2) = ((-3.0d0*f(1:n-2) + 4.0d0*f(2:n-1) - f(3:n)) * res ) * beta(1:n-2)
-  df(n) = ((3.0d0*f(n) - 4.0d0*f(n-1) + f(n-2)) * res) * beta(n)
-end subroutine advec_x_u_sub
+  df(1:n-2) = beta(1:n-2) * ( &
+       -3.0d0*f(1:n-2)       &
+     +  4.0d0*f(2:n-1)       &
+     -        f(3:n) ) * res
 
-subroutine advec_x_n_sub(f, beta, x, df)
+  df(n-1) = beta(n-1) * (f(n) - f(n-2)) * res
+
+  df(n) = beta(n) * ( &
+       3.0d0*f(n) - 4.0d0*f(n-1) + f(n-2) ) * res
+
+end function advec_x_u
+
+
+!===============================================================================
+! Advección no uniforme — complejo 1D
+!===============================================================================
+function advec_x_n(f, beta, x) result(df)
   implicit none
 
-  complex(kind=8), intent(in),  contiguous :: f(:)
-  real(kind=8),    intent(in),  contiguous :: x(:)
+  real(kind=8), intent(in),  contiguous :: f(:)
   real(kind=8),    intent(in),  contiguous :: beta(:)
-  complex(kind=8), intent(out), contiguous :: df(:)
+  real(kind=8),    intent(in),  contiguous :: x(:)
+  real(kind=8) :: df(size(f))
 
-  integer :: n, i
+  integer      :: i, n
   real(kind=8) :: h0, h1, denom
 
   n = size(f)
 
-  ! Forward de segundo orden para i = 1, ..., n-2
   do i = 1, n-2
+     h0 = x(i+1) - x(i)
+     h1 = x(i+2) - x(i+1)
 
-    h0 = x(i+1) - x(i)
-    h1 = x(i+2) - x(i+1)
+     denom = h0*h1*(h0 + h1)
 
-    denom = h0*h1*(h0 + h1)
-
-    df(i) = beta(i) * ( &
-         -(2.0d0*h0 + h1)*h1*f(i) &
-         + (h0 + h1)**2*f(i+1)          &
-         - h0**2*f(i+2)                 &
-         ) / denom
-
+     df(i) = beta(i) * ( &
+          -(2.0d0*h0 + h1)*h1*f(i) &
+        + (h0 + h1)*(h0 + h1)*f(i+1) &
+        - h0*h0*f(i+2) ) / denom
   end do
-
-  ! i = n-1
-  !
-  ! Aquí ya no existe f(i+2). Con los puntos disponibles,
-  ! una opción de segundo orden es usar stencil centrado:
-  !
-  ! h0 = x(n-1) - x(n-2)
-  ! h1 = x(n)   - x(n-1)
 
   h0 = x(n-1) - x(n-2)
   h1 = x(n)   - x(n-1)
@@ -228,15 +206,9 @@ subroutine advec_x_n_sub(f, beta, x, df)
   denom = h0*h1*(h0 + h1)
 
   df(n-1) = beta(n-1) * ( &
-       - h1**2*f(n-2)              &
-       + (h1**2 - h0**2)*f(n-1)    &
-       + h0**2*f(n)                &
-       ) / denom
-
-  ! i = n
-  !
-  ! Para evitar dejar df(n) sin inicializar, usamos backward
-  ! de segundo orden.
+       - h1*h1*f(n-2)              &
+       + (h1*h1 - h0*h0)*f(n-1)    &
+       + h0*h0*f(n) ) / denom
 
   h0 = x(n)   - x(n-1)
   h1 = x(n-1) - x(n-2)
@@ -244,113 +216,190 @@ subroutine advec_x_n_sub(f, beta, x, df)
   denom = h0*h1*(h0 + h1)
 
   df(n) = beta(n) * ( &
-       (2.0d0*h0 + h1)*h1*f(n) &
-       - (h0 + h1)**2*f(n-1)        &
-       + h0**2*f(n-2)               &
-       ) / denom
+       (2.0d0*h0 + h1)*h1*f(n)       &
+     - (h0 + h1)*(h0 + h1)*f(n-1)    &
+     + h0*h0*f(n-2) ) / denom
 
-end subroutine advec_x_n_sub
-
-subroutine advec_x_hybrid_sub(f, G, M, df)
-  implicit none
-
-  complex(kind=8), intent(in),  contiguous :: f(:)
-  type(geometry_t), intent(in)             :: G
-  type(mesh_t),     intent(in)             :: M
-  complex(kind=8), intent(out), contiguous :: df(:)
-
-  integer :: n, i
-  real(kind=8) :: h0, h1, denom, res
-
-  n = size(f)
-  
-  res = 0.5d0 / M%dr_max
-
-  do i = 1, M%i_flat - 1
-    h0 = M%r(i+1) - M%r(i)
-    h1 = M%r(i+2) - M%r(i+1)
-
-    denom = h0*h1*(h0 + h1)
-
-    df(i) = G%beta(i) * ( &
-         -(2.0d0*h0 + h1)*h1*f(i) &
-         + (h0 + h1)**2*f(i+1)          &
-         - h0**2*f(i+2)                 &
-         ) / denom
-  end do
-
-  df(M%i_flat:n-2) = G%beta(M%i_flat:n-2) * ( &
-        -3.0d0*f(M%i_flat:n-2) &
-        + 4.0d0*f(M%i_flat+1:n-1) &
-        - f(M%i_flat+2:n) ) * res
-
-  df(n-1) = G%beta(n-1) * (f(n) - f(n-2)) * res
-  df(n) = G%beta(n) * ( &
-       3.0d0*f(n) - 4.0d0*f(n-1) + f(n-2) &
-       ) * res
-
-end subroutine advec_x_hybrid_sub
-
-subroutine advec_x_hybrid(f, G, M, df)
-  implicit none
-
-  complex(kind=8), intent(in),  contiguous :: f(:)
-  type(geometry_t), intent(in)             :: G
-  type(mesh_t),     intent(in)             :: M
-  complex(kind=8), intent(out), contiguous :: df(:)
-
-  call advec_x_hybrid_sub(f, G, M, df)
-end subroutine advec_x_hybrid
-
-
-!===============================================================================
-! WRAPPERS PÚBLICOS
-!===============================================================================
-
-function first_x_2_u(f, h) result(df)
-    complex(kind=8), intent(in) :: f(:)
-    real(kind=8),    intent(in) :: h
-    complex(kind=8) :: df(size(f))
-    call first_x_2_u_sub(f, h, df)
-  end function first_x_2_u
-
-function first_x_2_n(f, x) result(df)
-    complex(kind=8), intent(in) :: f(:)
-    real(kind=8),    intent(in) :: x(:)
-    complex(kind=8) :: df(size(f))
-    call first_x_2_n_sub(f, x, df)
-  end function first_x_2_n
-
-function first_x_2_hybrid_fn(f, M) result(df)
-    complex(kind=8), intent(in) :: f(:)
-    type(mesh_t),    intent(in) :: M
-    complex(kind=8) :: df(size(f))
-    call first_x_2_hybrid_sub(f, M, df)
-  end function first_x_2_hybrid_fn
-
-function advec_x_u(f, beta, dx) result(df)
-    complex(kind=8), intent(in) :: f(:)
-    real(kind=8), intent(in) :: beta(:)
-    real(kind=8),    intent(in) :: dx
-    complex(kind=8) :: df(size(f))
-    call advec_x_u_sub(f, beta, dx, df)
-  end function advec_x_u
-
-function advec_x_n(f, beta, x) result(df)
-    complex(kind=8), intent(in) :: f(:)
-    real(kind=8), intent(in) :: beta(:)
-    real(kind=8),    intent(in) :: x(:)
-    complex(kind=8) :: df(size(f))
-    call advec_x_n_sub(f, beta, x, df)
 end function advec_x_n
 
-function advec_x_hybrid_fn(f, G, M) result(df)
-    complex(kind=8), intent(in) :: f(:)
-    type(geometry_t), intent(in) :: G
-    type(mesh_t),     intent(in) :: M
-    complex(kind=8) :: df(size(f))
-    call advec_x_hybrid_sub(f, G, M, df)
-end function advec_x_hybrid_fn
 
+!===============================================================================
+! Advección híbrida 
+!
+! Requiere en geometry_t:
+!   G%adv_a(:),  G%adv_b(:),  G%adv_c(:)
+!   G%adv_u0(:), G%adv_u1(:), G%adv_u2(:)
+!
+!===============================================================================
+function advec_x_hybrid(f, G, M) result(df)
+  implicit none
+
+  real(kind=8), intent(in),  contiguous :: f(:,:)
+  type(geometry_t), intent(in)          :: G
+  type(mesh_t),     intent(in)          :: M
+  real(kind=8)  :: df(size(f,1),size(f,2))
+
+  integer :: i, n, i_flat
+
+  n      = size(f,1)
+  i_flat = M%i_flat
+
+  do concurrent (i = 1:i_flat-1)
+     df(i,Re) = G%adv_a(i)*f(i,Re)   &
+             + G%adv_b(i)*f(i+1,Re) &
+             + G%adv_c(i)*f(i+2,Re)
+     df(i,Im) = G%adv_a(i)*f(i,Im)   &
+             + G%adv_b(i)*f(i+1,Im) &
+             + G%adv_c(i)*f(i+2,Im)
+
+  end do
+
+  do concurrent (i = i_flat:n-2)
+     df(i,Re) = G%adv_u0(i)*f(i,Re)   &
+             + G%adv_u1(i)*f(i+1,Re) &
+             + G%adv_u2(i)*f(i+2,Re)
+     df(i,Im) = G%adv_u0(i)*f(i,Im)   &
+             + G%adv_u1(i)*f(i+1,Im) &
+             + G%adv_u2(i)*f(i+2,Im)
+  end do
+
+  df(n-1,Re) = G%adv_u0(n-1)*f(n-2,Re) + G%adv_u2(n-1)*f(n,Re)
+  df(n-1,Im) = G%adv_u0(n-1)*f(n-2,Im) + G%adv_u2(n-1)*f(n,Im)
+
+  df(n,Re) = G%adv_u0(n)*f(n-2,Re) &
+          + G%adv_u1(n)*f(n-1,Re) &
+          + G%adv_u2(n)*f(n,Re)
+  df(n,Im) = G%adv_u0(n)*f(n-2,Im) &
+          + G%adv_u1(n)*f(n-1,Im) &
+          + G%adv_u2(n)*f(n,Im)
+
+
+end function advec_x_hybrid
+
+!===============================================================================!
+! Advección híbrida completa: incluye el término de advección con la derivada de beta
+! Requiere en geometry_t:
+!   G%adv_a(:),  G%adv_b(:),  G%adv_c(:)
+!   G%adv_u0(:), G%adv_u1(:), G%adv_u2(:)
+!   G%dbeta(:)
+!===============================================================================!
+
+function advec_full_hybrid(f, G, M) result(df)
+  implicit none
+
+  real(kind=8), intent(in),  contiguous :: f(:,:)
+  type(geometry_t), intent(in)          :: G
+  type(mesh_t),     intent(in)          :: M
+  real(kind=8)  :: df(size(f,1),size(f,2))
+
+  integer :: i, n, i_flat
+
+  n      = size(f,1)
+  i_flat = M%i_flat
+
+  do concurrent (i = 1:i_flat-1)
+     df(i,Re) = G%adv_a(i)*f(i,Re)   &
+             + G%adv_b(i)*f(i+1,Re) &
+             + G%adv_c(i)*f(i+2,Re) & 
+             + G%dbeta(i) * f(i,Re)
+     df(i,Im) = G%adv_a(i)*f(i,Im)   &
+             + G%adv_b(i)*f(i+1,Im) &
+             + G%adv_c(i)*f(i+2,Im) & 
+             + G%dbeta(i) * f(i,Im)
+
+  end do
+
+  do concurrent (i = i_flat:n-2)
+     df(i,Re) = G%adv_u0(i)*f(i,Re)   &
+             + G%adv_u1(i)*f(i+1,Re) &
+             + G%adv_u2(i)*f(i+2,Re) & 
+             + G%dbeta(i) * f(i,Re)
+     df(i,Im) = G%adv_u0(i)*f(i,Im)   &
+             + G%adv_u1(i)*f(i+1,Im) &
+             + G%adv_u2(i)*f(i+2,Im) & 
+             + G%dbeta(i) * f(i,Im)
+  end do
+
+  df(n-1,Re) = G%adv_u0(n-1)*f(n-2,Re) + G%adv_u2(n-1)*f(n,Re) + G%dbeta(n-1) * f(n-1,Re)
+  df(n-1,Im) = G%adv_u0(n-1)*f(n-2,Im) + G%adv_u2(n-1)*f(n,Im) + G%dbeta(n-1) * f(n-1,Im)
+
+  df(n,Re) = G%adv_u0(n)*f(n-2,Re) &
+          + G%adv_u1(n)*f(n-1,Re) &
+          + G%adv_u2(n)*f(n,Re) & 
+          + G%dbeta(n) * f(n,Re)
+  df(n,Im) = G%adv_u0(n)*f(n-2,Im) &
+          + G%adv_u1(n)*f(n-1,Im) &
+          + G%adv_u2(n)*f(n,Im) & 
+          + G%dbeta(n) * f(n,Im)
+
+end function advec_full_hybrid
+
+function first_derivative_escaled_hybrid(a,f,M) result(df)
+  implicit none
+
+  real(kind=8), intent(in),  contiguous :: f(:,:)
+  real(kind=8), intent(in),  contiguous :: a(:)
+  type(mesh_t), intent(in)              :: M
+  real(kind=8) :: df(size(f,1),size(f,2))
+
+  integer      :: i, n, i_flat
+  real(kind=8) :: res
+
+  n      = size(f,1)
+  i_flat = M%i_flat
+  res    = M%inv_2dr_max
+
+
+  df(1,Re) = M%d1_a(1)*f(1,Re)*a(1) + M%d1_b(1)*f(2,Re)*a(2) + M%d1_c(1)*f(3,Re)*a(3)
+  df(1,Im) = M%d1_a(1)*f(1,Im)*a(1) + M%d1_b(1)*f(2,Im)*a(2) + M%d1_c(1)*f(3,Im)*a(3)
+
+  do concurrent (i = 2:i_flat-1)
+     df(i,Re) = M%d1_a(i)*f(i-1,Re)*a(i-1) + M%d1_b(i)*f(i,Re)*a(i) + M%d1_c(i)*f(i+1,Re)*a(i+1)
+     df(i,Im) = M%d1_a(i)*f(i-1,Im)*a(i-1) + M%d1_b(i)*f(i,Im)*a(i) + M%d1_c(i)*f(i+1,Im)*a(i+1)
+  end do
+
+  do concurrent (i = i_flat:n-1)
+     df(i,Re) = (f(i+1,Re)*a(i+1) - f(i-1,Re)*a(i-1)) * res 
+     df(i,Im) = (f(i+1,Im)*a(i+1) - f(i-1,Im)*a(i-1)) * res 
+  end do
+
+  df(n,Re) = (3.0d0*f(n,Re)*a(n) - 4.0d0*f(n-1,Re)*a(n-1) + f(n-2,Re)*a(n-2)) * res
+  df(n,Im) = (3.0d0*f(n,Im)*a(n) - 4.0d0*f(n-1,Im)*a(n-1) + f(n-2,Im)*a(n-2)) * res
+
+end function first_derivative_escaled_hybrid
+
+function derivative_escaled_hybrid_product(b,a,f,M) result(df)
+  implicit none
+
+  real(kind=8), intent(in),  contiguous :: f(:,:)
+  real(kind=8), intent(in),  contiguous :: a(:), b(:)
+  type(mesh_t), intent(in)              :: M
+  real(kind=8) :: df(size(f,1),size(f,2))
+
+  integer      :: i, n, i_flat
+  real(kind=8) :: res
+
+  n      = size(f,1)
+  i_flat = M%i_flat
+  res    = M%inv_2dr_max
+
+
+  df(1,Re) = (M%d1_a(1)*f(1,Re)*a(1) + M%d1_b(1)*f(2,Re)*a(2) + M%d1_c(1)*f(3,Re)*a(3)) * b(1)
+  df(1,Im) = (M%d1_a(1)*f(1,Im)*a(1) + M%d1_b(1)*f(2,Im)*a(2) + M%d1_c(1)*f(3,Im)*a(3)) * b(1)
+
+  do concurrent (i = 2:i_flat-1)
+     df(i,Re) = (M%d1_a(i)*f(i-1,Re)*a(i-1) + M%d1_b(i)*f(i,Re)*a(i) + M%d1_c(i)*f(i+1,Re)*a(i+1)) * b(i)
+     df(i,Im) = (M%d1_a(i)*f(i-1,Im)*a(i-1) + M%d1_b(i)*f(i,Im)*a(i) + M%d1_c(i)*f(i+1,Im)*a(i+1)) * b(i)
+  end do
+
+  do concurrent (i = i_flat:n-1)
+     df(i,Re) = (f(i+1,Re)*a(i+1) - f(i-1,Re)*a(i-1)) * res * b(i)
+     df(i,Im) = (f(i+1,Im)*a(i+1) - f(i-1,Im)*a(i-1)) * res * b(i)
+  end do
+
+  df(n,Re) = (3.0d0*f(n,Re)*a(n) - 4.0d0*f(n-1,Re)*a(n-1) + f(n-2,Re)*a(n-2)) * res * b(n)
+  df(n,Im) = (3.0d0*f(n,Im)*a(n) - 4.0d0*f(n-1,Im)*a(n-1) + f(n-2,Im)*a(n-2)) * res * b(n)
+
+end function derivative_escaled_hybrid_product
 
 end module finite_differences

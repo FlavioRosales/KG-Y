@@ -1,23 +1,23 @@
 # ============================================
-#  KG-Y Makefile (Ubuntu + OpenMPI + HDF5)
+#  KG-Y Makefile (AOCC + OpenMPI + HDF5)
 # ============================================
+
+SHELL := /bin/bash
 
 FC = h5pfc
 
-# -------- Flags --------
-FFLAGS_COMMON = -O3 -march=native # -Jbuild -fcheck=all 
 MODDIR  = build
 OBJDIR  = build
 TARGET  = kg_y.exe
 
-# -------- MPI run defaults --------
+FFLAGS_COMMON = -O3 -march=native -mtune=native -ffast-math -J$(MODDIR) -I$(MODDIR)
+
+LIBS = -llapack -lblas
+
 NPROC  ?= 4
 PARAMS ?= params.nml
 RUN_DIR := $(basename $(notdir $(PARAMS)))
 
-# ============================================
-#  Fuentes
-# ============================================
 SRC = \
   main/mpi_lib.f90 \
   main/run_control.f90 \
@@ -36,24 +36,15 @@ SRC = \
 
 OBJ = $(SRC:%.f90=$(OBJDIR)/%.o)
 
-# ============================================
-#  Regla principal
-# ============================================
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(FC) $(FFLAGS_COMMON) -o $@ $^
+	$(FC) $(FFLAGS_COMMON) -o $@ $^ $(LIBS)
 
-# ============================================
-#  Compilación
-# ============================================
 $(OBJDIR)/%.o: %.f90
 	@mkdir -p $(dir $@) $(MODDIR)
 	$(FC) $(FFLAGS_COMMON) -c $< -o $@
 
-# ============================================
-#  Ejecución MPI
-# ============================================
 run: $(TARGET)
 	@echo ">> Ejecutando con $(NPROC) ranks MPI"
 	@echo ">> Archivo de parámetros : $(PARAMS)"
@@ -66,26 +57,27 @@ run: $(TARGET)
 		echo ">> [AVISO] No se encontró $(PARAMS). Se usarán defaults."; \
 	fi
 	HDF5_USE_FILE_LOCKING=FALSE \
-	mpirun --bind-to core --map-by slot --mca btl ^tcp -np $(NPROC) \
+	mpirun --bind-to core --map-by slot -np $(NPROC) \
 	bash -c "cd $(RUN_DIR) && ../$(TARGET)"
 
-# ============================================
-#  Limpieza
-# ============================================
 clean:
-	rm -rf $(OBJDIR) $(MODDIR) $(TARGET)
+	rm -rf $(OBJDIR) $(TARGET) *.mod
 
-# ============================================
-#  Diagnóstico
-# ============================================
 print-hdf5:
-	@echo "FC = $(FC)"
+	@echo "which h5pfc ="
+	@which h5pfc
+	@echo
 	@echo "h5pfc -show ="
 	@h5pfc -show
 
-print-run:
-	@echo "NPROC   = $(NPROC)"
-	@echo "PARAMS  = $(PARAMS)"
-	@echo "RUN_DIR = $(RUN_DIR)"
+print-mpi:
+	@echo "which mpif90 ="
+	@which mpif90
+	@echo
+	@echo "mpif90 --showme:command ="
+	@mpif90 --showme:command
+	@echo
+	@echo "mpif90 --showme ="
+	@mpif90 --showme
 
-.PHONY: all run clean print-hdf5 print-run
+.PHONY: all run clean print-hdf5 print-mpi

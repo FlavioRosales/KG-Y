@@ -8,13 +8,14 @@ module state
 
   real(kind=8), parameter :: pii = acos(-1.0d0)
   real(kind=8), parameter :: EPS = 1.0d-8
+  integer,      parameter :: Re = 1, Im = 2
 
   type :: state_t
      integer :: Nr = 0
      integer :: Nt = 0
      real(kind=8) :: mu_field
      integer :: ell
-     complex(kind=8), allocatable :: phi(:), psi(:), pi(:)
+     real(kind=8), allocatable :: phi(:,:), psi(:,:), pi(:,:)
      real(kind=8), allocatable :: Noether(:), Accretion_Noether(:)
      !real(kind=8), allocatable :: energy_density(:), klm(:), Omegalm(:), omglm(:), vr(:) 
    contains
@@ -48,7 +49,7 @@ contains
     this%ell = ell
     this%mu_field = mu_field
 
-    allocate(this%phi(Nr), this%psi(Nr), this%pi(Nr), &
+    allocate(this%phi(Nr,2), this%psi(Nr,2), this%pi(Nr,2), &
     this%Noether(0:Nt), this%Accretion_Noether(0:Nt) )
     !this%energy_density(Nr), this%klm(Nr), this%Omegalm(Nr), this%omglm(Nr), this%vr(Nr) )
 
@@ -81,7 +82,6 @@ subroutine diagnostic_state(this, G, M, idx,hit)
 end subroutine diagnostic_state
 
 real(kind=8) function Noether_rate(this, G, M) result(dQdt)
-  use utils,          only: trapezium
   implicit none
 
   class(state_t),    intent(in) :: this
@@ -89,8 +89,8 @@ real(kind=8) function Noether_rate(this, G, M) result(dQdt)
   class(mesh_t),     intent(in) :: M
 
   integer :: i_hor, Nr
-  complex(kind=8) :: flux
-  real(kind=8) :: r_hor, f_hor
+  real(kind=8) :: flux
+  real(kind=8) :: r_hor
 
   Nr = size(M%r)
   r_hor = 1.0d0
@@ -100,12 +100,12 @@ real(kind=8) function Noether_rate(this, G, M) result(dQdt)
   i_hor = max(i_hor, 1)
   
 
-  flux = conjg(this%phi(i_hor)) * ( G%guu(i_hor) * this%psi(i_hor) + &
-                                   (G%beta(i_hor) / G%alpha(i_hor)) * this%pi(i_hor) )
+  !flux = conjg(this%phi(i_hor)) * ( G%guu(i_hor) * this%psi(i_hor) + &
+  !                                 (G%beta(i_hor) / G%alpha(i_hor)) * this%pi(i_hor) )
+  flux = this%phi(i_hor, Re) * (G%guu(i_hor)*this%psi(i_hor, Im) + G%beta(i_hor)/G%alpha(i_hor)*this%pi(i_hor, Im)) &
+        - this%phi(i_hor, Im) * (G%guu(i_hor)*this%psi(i_hor, Re) + G%beta(i_hor)/G%alpha(i_hor)*this%pi(i_hor, Re))
+  dQdt = - G%alpha(i_hor) * M%r(i_hor)**2 * sqrt(G%grr(i_hor)) * flux
 
-  f_hor = G%alpha(i_hor) * M%r(i_hor)**2 * sqrt(G%grr(i_hor)) * aimag(flux)
-
-  dQdt = - f_hor 
 
 end function Noether_rate
 
@@ -127,12 +127,11 @@ real(kind=8) function Noether_charge(this, G, M) result(Q)
   i_hor = max(i_hor, 1)
 
   Q = - trapezium( M%r(i_hor:)**2 * sqrt(G%grr(i_hor:)) * &
-                   aimag( conjg(this%phi(i_hor:)) * this%pi(i_hor:) ), M%dr )
+                  this%phi(i_hor:,Re)*this%pi(i_hor:,Im) - this%phi(i_hor:,Im)*this%pi(i_hor:,Re), M)
 
 end function Noether_charge
 
 function energy(this,G,M) result(rho_bar)
-  use utils,          only: trapezium
   implicit none
 
   class(state_t),    intent(in) :: this
@@ -141,13 +140,12 @@ function energy(this,G,M) result(rho_bar)
   real(kind=8) :: rho_bar(M%Nr)
 
   rho_bar = &
-    abs(this%pi)**2 + G%guu * abs(this%psi)**2 + &
-    this%mu_field**2  +  (this%ell * (this%ell + 1) / M%r**2 ) * abs(this%phi)**2
+    dsqrt(this%pi(:,Re)**2 + this%pi(:,Im)**2) + G%guu * dsqrt(this%psi(:,Re)**2 + this%psi(:,Im)**2) + &
+    this%mu_field**2  +  (this%ell * (this%ell + 1) / M%r**2 ) * dsqrt(this%phi(:,Re)**2 + this%phi(:,Im)**2)
 
 end function
 
 function radial_wavenumber(this,G,M) result(k_r)
-  use utils,          only: trapezium
   implicit none
 
   class(state_t),    intent(in) :: this
@@ -157,11 +155,11 @@ function radial_wavenumber(this,G,M) result(k_r)
 
 
   k_r = &
-    1.0d0 / max(abs(this%phi)**2,EPS) * aimag(conjg(this%phi) * this%psi)
+    1.0d0 / max(dsqrt(this%phi(:,Re)**2 + this%phi(:,Im)**2),EPS) * & 
+     (this%phi(:,Re)*this%psi(:,Im) - this%phi(:,Im)*this%psi(:,Re))
 end function
 
 function local_frequency(this,G,M) result(Omega)
-  use utils,          only: trapezium
   implicit none
 
   class(state_t),    intent(in) :: this
@@ -170,7 +168,8 @@ function local_frequency(this,G,M) result(Omega)
   real(kind=8) :: Omega(M%Nr)
 
   Omega = &
-    -1.0d0 / max(abs(this%phi)**2,EPS) * aimag(conjg(this%phi) * this%pi)
+    -1.0d0 / max(dsqrt(this%phi(:,Re)**2 + this%phi(:,Im)**2),EPS) * & 
+     (this%phi(:,Re)*this%pi(:,Im) - this%phi(:,Im)*this%pi(:,Re))
 end function
 
 
@@ -188,9 +187,9 @@ end function
     class(state_t), intent(in) :: this
     write(*,'(A)') "---- State info ----"
     write(*,'(A,I0)') "Nr = ", this%Nr
-    write(*,'(A,ES14.6)') "max|phi| = ", maxval(abs(this%phi))
-    write(*,'(A,ES14.6)') "max|psi| = ", maxval(abs(this%psi))
-    write(*,'(A,ES14.6)') "max|pi|  = ", maxval(abs(this%pi))
+    write(*,'(A,ES14.6)') "max|phi| = ", maxval(dsqrt(this%phi(:,Re)**2 + this%phi(:,Im)**2))
+    write(*,'(A,ES14.6)') "max|psi| = ", maxval(dsqrt(this%psi(:,Re)**2 + this%psi(:,Im)**2))
+    write(*,'(A,ES14.6)') "max|pi|  = ", maxval(dsqrt(this%pi(:,Re)**2 + this%pi(:,Im)**2))
     write(*,'(A)') "--------------------"
   end subroutine
 

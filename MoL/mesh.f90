@@ -5,13 +5,17 @@ module mesh
   public :: mesh_t, build_mesh, print_mesh_info
 
   type :: mesh_t
-     integer :: Nr = 0
-     real(kind=8) :: rmin = 0.0d0, rmax = 0.0d0, dr = 0.0d0
-     real(kind=8), allocatable :: r(:)
-     real(kind=8) :: dr_min = 0.0d0, dr_max = 0.0d0
-     integer :: i_flat = 0
-     real(kind=8) :: r_flat = 0.0d0
-     integer :: i_sl_first = 0, i_sl_last = 0
+    integer :: Nr = 0
+    real(kind=8) :: rmin = 0.0d0, rmax = 0.0d0, dr = 0.0d0
+    real(kind=8), allocatable :: r(:)
+    real(kind=8) :: dr_min = 0.0d0, dr_max = 0.0d0
+    integer :: i_flat = 0
+    real(kind=8) :: r_flat = 0.0d0
+    integer :: i_sl_first = 0, i_sl_last = 0
+
+    ! Coeficientes precalculados para derivada radial de 2º orden
+    real(kind=8), allocatable :: d1_a(:), d1_b(:), d1_c(:)
+    real(kind=8) :: inv_2dr_max = 0.0d0
   end type mesh_t
 
 contains
@@ -76,6 +80,20 @@ contains
 
     deallocate(r_sl)
 
+    if (M%Nr > 1) then
+      M%dr_min = minval(M%r(2:M%Nr) - M%r(1:M%Nr-1))
+      M%dr_max = maxval(M%r(2:M%Nr) - M%r(1:M%Nr-1))
+      M%dr = M%dr_min
+    else
+      M%dr = 0.0d0
+    end if
+
+    M%inv_2dr_max = 0.5d0 / M%dr_max
+
+    call build_first_x_2_coeffs(M)
+
+
+
   end subroutine build_mesh
 
   subroutine print_mesh_info(M)
@@ -130,7 +148,7 @@ contains
     end do
   end subroutine build_sl_grid
 
-  real(kind=8) function local_dr(x, r_flat, dr_min, dr_max)
+real(kind=8) function local_dr(x, r_flat, dr_min, dr_max)
      real(kind=8), intent(in) :: x
      real(kind=8), intent(in) :: r_flat
      real(kind=8), intent(in) :: dr_min
@@ -161,5 +179,49 @@ real(kind=8) function next_dr(x,r_flat,dr_min, dr_max)
         next_dr = 1.0d0 - x
     end if
 end function next_dr
+
+subroutine build_first_x_2_coeffs(M)
+  implicit none
+
+  type(mesh_t), intent(inout) :: M
+
+  integer      :: i
+  real(kind=8) :: h0, h1
+
+  if (allocated(M%d1_a)) deallocate(M%d1_a)
+  if (allocated(M%d1_b)) deallocate(M%d1_b)
+  if (allocated(M%d1_c)) deallocate(M%d1_c)
+
+  allocate(M%d1_a(M%Nr))
+  allocate(M%d1_b(M%Nr))
+  allocate(M%d1_c(M%Nr))
+
+  M%d1_a = 0.0d0
+  M%d1_b = 0.0d0
+  M%d1_c = 0.0d0
+
+  !-----------------------------------------------------------------------
+  ! i = 1: stencil forward no uniforme de segundo orden
+  !-----------------------------------------------------------------------
+  h0 = M%r(2) - M%r(1)
+  h1 = M%r(3) - M%r(2)
+
+  M%d1_a(1) = -(2.0d0*h0 + h1)/(h0*(h0 + h1))
+  M%d1_b(1) =  (h0 + h1)/(h0*h1)
+  M%d1_c(1) = -h0/(h1*(h0 + h1))
+
+  !-----------------------------------------------------------------------
+  ! Región no uniforme: stencil centrado no uniforme de segundo orden
+  !-----------------------------------------------------------------------
+  do i = 2, M%i_flat - 1
+     h0 = M%r(i)   - M%r(i-1)
+     h1 = M%r(i+1) - M%r(i)
+
+     M%d1_a(i) = -h1/(h0*(h0 + h1))
+     M%d1_b(i) =  (h1 - h0)/(h0*h1)
+     M%d1_c(i) =  h0/(h1*(h0 + h1))
+  end do
+
+end subroutine build_first_x_2_coeffs
 
 end module mesh
