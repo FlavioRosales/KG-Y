@@ -1,22 +1,19 @@
 # ============================================
-#  KG-Y Makefile (AOCC + OpenMPI + HDF5)
+# KG-Y
 # ============================================
-
-SHELL := /bin/bash
 
 FC = h5pfc
 
-MODDIR  = build
-OBJDIR  = build
-TARGET  = kg_y.exe
+TARGET = kg_y.exe
+OBJDIR = build
+MODDIR = build
 
-FFLAGS_COMMON = -O3 -march=native -mtune=native -ffast-math -J$(MODDIR) -I$(MODDIR)
-
-LIBS = -llapack -lblas
+FFLAGS = -O3 -march=native -mtune=native -ffast-math -I$(MODDIR)
+LIBS   = -llapack -lblas
 
 NPROC  ?= 4
 PARAMS ?= params.nml
-RUN_DIR := $(basename $(notdir $(PARAMS)))
+RUN_DIR = $(basename $(notdir $(PARAMS)))
 
 SRC = \
   main/mpi_lib.f90 \
@@ -39,45 +36,18 @@ OBJ = $(SRC:%.f90=$(OBJDIR)/%.o)
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
-	$(FC) $(FFLAGS_COMMON) -o $@ $^ $(LIBS)
+	$(FC) $(FFLAGS) -o $@ $^ $(LIBS)
 
 $(OBJDIR)/%.o: %.f90
 	@mkdir -p $(dir $@) $(MODDIR)
-	$(FC) $(FFLAGS_COMMON) -c $< -o $@
+	$(FC) $(FFLAGS) -c $< -o $@
 
 run: $(TARGET)
-	@echo ">> Ejecutando con $(NPROC) ranks MPI"
-	@echo ">> Archivo de parámetros : $(PARAMS)"
-	@echo ">> Directorio de corrida : $(RUN_DIR)"
 	@mkdir -p $(RUN_DIR)
-	@if [ -f "$(PARAMS)" ]; then \
-		echo ">> Copiando $(PARAMS) -> $(RUN_DIR)/params.nml"; \
-		cp "$(PARAMS)" "$(RUN_DIR)/params.nml"; \
-	else \
-		echo ">> [AVISO] No se encontró $(PARAMS). Se usarán defaults."; \
-	fi
-	HDF5_USE_FILE_LOCKING=FALSE \
-	mpirun --bind-to core --map-by slot -np $(NPROC) \
-	bash -c "cd $(RUN_DIR) && ../$(TARGET)"
+	@cp $(PARAMS) $(RUN_DIR)/params.nml
+	mpirun --mca btl ^tcp -np $(NPROC) --wdir $(RUN_DIR) $(abspath $(TARGET))
 
 clean:
-	rm -rf $(OBJDIR) $(TARGET) *.mod
+	rm -rf $(OBJDIR) $(TARGET)
 
-print-hdf5:
-	@echo "which h5pfc ="
-	@which h5pfc
-	@echo
-	@echo "h5pfc -show ="
-	@h5pfc -show
-
-print-mpi:
-	@echo "which mpif90 ="
-	@which mpif90
-	@echo
-	@echo "mpif90 --showme:command ="
-	@mpif90 --showme:command
-	@echo
-	@echo "mpif90 --showme ="
-	@mpif90 --showme
-
-.PHONY: all run clean print-hdf5 print-mpi
+.PHONY: all run clean

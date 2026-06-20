@@ -14,7 +14,6 @@ module state
      integer :: Nr = 0
      integer :: Nt = 0
      real(kind=8) :: mu_field
-     integer :: ell
      real(kind=8), allocatable :: phi(:,:), psi(:,:), pi(:,:)
      real(kind=8), allocatable :: Noether(:), Accretion_Noether(:)
      !real(kind=8), allocatable :: energy_density(:), klm(:), Omegalm(:), omglm(:), vr(:) 
@@ -26,7 +25,6 @@ module state
      procedure :: diagnostic => diagnostic_state
      procedure :: NC => Noether_charge 
      procedure :: Noether_rate 
-     procedure :: energy
      procedure :: radial_wavenumber
      procedure :: local_frequency
 
@@ -35,23 +33,19 @@ module state
 
 contains
 
-  subroutine state_init(this, Nr, Nt, ell, mu_field)
+  subroutine state_init(this, Nr, Nt, mu_field)
     class(state_t), intent(inout) :: this
     integer,        intent(in)    :: Nr
     integer,        intent(in)    :: Nt
-    integer,        intent(in)    :: ell
     real(kind=8),   intent(in)    :: mu_field
 
     call this%free()
 
     this%Nr = Nr
     this%Nt = Nt
-    this%ell = ell
     this%mu_field = mu_field
 
-    allocate(this%phi(Nr,2), this%psi(Nr,2), this%pi(Nr,2), &
-    this%Noether(0:Nt), this%Accretion_Noether(0:Nt) )
-    !this%energy_density(Nr), this%klm(Nr), this%Omegalm(Nr), this%omglm(Nr), this%vr(Nr) )
+    allocate(this%phi(Nr,2), this%psi(Nr,2), this%pi(Nr,2))
 
     call this%zero()
   end subroutine
@@ -64,19 +58,9 @@ subroutine diagnostic_state(this, G, M, idx,hit)
   class(mesh_t),     intent(in)    :: M
   integer,           intent(in)    :: idx
   logical,           intent(in)    :: hit
-  !real(kind=8) :: den(M%Nr)
 
-!  if(hit) then
- !   this%energy_density = this%energy(G, M)
- !   this%klm = this%radial_wavenumber(G, M)
- !   this%Omegalm = this%local_frequency(G, M)
- !   this%omglm = G%alpha * this%Omegalm - G%beta * this%klm
- !   den = sign(max(abs(this%Omegalm), EPS), this%Omegalm)
- !   this%vr = -G%beta + G%alpha * G%guu * this%klm / den
- ! end if
-    ! Carga Noether
-  this%Accretion_Noether(idx) = this%Noether_rate(G, M)
-  this%Noether(idx) = this%NC(G, M)
+  !this%Accretion_Noether(idx) = this%Noether_rate(G, M)
+  !this%Noether(idx) = this%NC(G, M)
 
 
 end subroutine diagnostic_state
@@ -131,19 +115,7 @@ real(kind=8) function Noether_charge(this, G, M) result(Q)
 
 end function Noether_charge
 
-function energy(this,G,M) result(rho_bar)
-  implicit none
 
-  class(state_t),    intent(in) :: this
-  class(geometry_t), intent(in) :: G
-  class(mesh_t),     intent(in) :: M
-  real(kind=8) :: rho_bar(M%Nr)
-
-  rho_bar = &
-    dsqrt(this%pi(:,Re)**2 + this%pi(:,Im)**2) + G%guu * dsqrt(this%psi(:,Re)**2 + this%psi(:,Im)**2) + &
-    this%mu_field**2  +  (this%ell * (this%ell + 1) / M%r**2 ) * dsqrt(this%phi(:,Re)**2 + this%phi(:,Im)**2)
-
-end function
 
 function radial_wavenumber(this,G,M) result(k_r)
   implicit none
@@ -175,11 +147,9 @@ end function
 
   subroutine state_zero(this)
     class(state_t), intent(inout) :: this
-    this%phi = (0.0d0, 0.0d0)
-    this%psi = (0.0d0, 0.0d0)
-    this%pi  = (0.0d0, 0.0d0)
-    this%Noether = 0.0d0
-    this%Accretion_Noether = 0.0d0
+    this%phi =  0.0d0
+    this%psi =  0.0d0
+    this%pi  =  0.0d0
 !    this%energy_density = 0.0d0
   end subroutine
 
@@ -198,13 +168,6 @@ end function
     if (allocated(this%phi)) deallocate(this%phi)
     if (allocated(this%psi)) deallocate(this%psi)
     if (allocated(this%pi))  deallocate(this%pi)
-    if (allocated(this%Noether)) deallocate(this%Noether)
-    if (allocated(this%Accretion_Noether)) deallocate(this%Accretion_Noether)
- !   if (allocated(this%energy_density)) deallocate(this%energy_density)
-!    if (allocated(this%klm)) deallocate(this%klm)
-  !  if (allocated(this%Omegalm)) deallocate(this%Omegalm)
-  !  if (allocated(this%omglm)) deallocate(this%omglm)
-  !  if (allocated(this%vr)) deallocate(this%vr)
     this%Nr = 0
     this%Nt = 0
   end subroutine
