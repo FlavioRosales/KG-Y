@@ -24,7 +24,8 @@ module state
      procedure :: free  => state_free
      procedure :: diagnostic => diagnostic_state
      procedure :: NC => Noether_charge 
-     procedure :: Noether_rate 
+     procedure :: Noether_rate_hor 
+     procedure :: Noether_rate_inf 
      procedure :: radial_wavenumber
      procedure :: local_frequency
 
@@ -65,7 +66,7 @@ subroutine diagnostic_state(this, G, M, idx,hit)
 
 end subroutine diagnostic_state
 
-real(kind=8) function Noether_rate(this, G, M) result(dQdt)
+real(kind=8) function Noether_rate_hor(this, G, M) result(dQdt)
   implicit none
 
   class(state_t),    intent(in) :: this
@@ -84,14 +85,34 @@ real(kind=8) function Noether_rate(this, G, M) result(dQdt)
   i_hor = max(i_hor, 1)
   
 
-  !flux = conjg(this%phi(i_hor)) * ( G%guu(i_hor) * this%psi(i_hor) + &
-  !                                 (G%beta(i_hor) / G%alpha(i_hor)) * this%pi(i_hor) )
   flux = this%phi(i_hor, Re) * (G%guu(i_hor)*this%psi(i_hor, Im) + G%beta(i_hor)/G%alpha(i_hor)*this%pi(i_hor, Im)) &
         - this%phi(i_hor, Im) * (G%guu(i_hor)*this%psi(i_hor, Re) + G%beta(i_hor)/G%alpha(i_hor)*this%pi(i_hor, Re))
   dQdt = - G%alpha(i_hor) * M%r(i_hor)**2 * sqrt(G%grr(i_hor)) * flux
 
 
-end function Noether_rate
+end function Noether_rate_hor
+
+real(kind=8) function Noether_rate_inf(this, G, M) result(dQdt)
+  implicit none
+
+  class(state_t),    intent(in) :: this
+  class(geometry_t), intent(in) :: G
+  class(mesh_t),     intent(in) :: M
+
+  integer :: i_hor, Nr
+  real(kind=8) :: flux
+  real(kind=8) :: r_hor
+
+  Nr = size(M%r)
+
+  ! Índices
+
+  flux = this%phi(Nr, Re) * (G%guu(Nr)*this%psi(Nr, Im) + G%beta(Nr)/G%alpha(Nr)*this%pi(Nr, Im)) &
+        - this%phi(Nr, Im) * (G%guu(Nr)*this%psi(Nr, Re) + G%beta(Nr)/G%alpha(Nr)*this%pi(Nr, Re))
+  dQdt =  G%alpha(Nr) * M%r(Nr)**2 * sqrt(G%grr(Nr)) * flux
+
+
+end function Noether_rate_inf
 
 
 real(kind=8) function Noether_charge(this, G, M) result(Q)
@@ -102,16 +123,9 @@ real(kind=8) function Noether_charge(this, G, M) result(Q)
   class(geometry_t), intent(in) :: G
   class(mesh_t),     intent(in) :: M
 
-  integer :: i_hor, Nr, i_inf
 
-  Nr = size(M%r)
-
-  i_hor = nint( (1.0d0 - M%r(1)) / M%dr ) + 1
-  i_inf = nint( (300.0d0 - M%r(1)) / M%dr ) + 1
-  i_hor = max(i_hor, 1)
-
-  Q = - trapezium( M%r(i_hor:)**2 * sqrt(G%grr(i_hor:)) * &
-                  this%phi(i_hor:,Re)*this%pi(i_hor:,Im) - this%phi(i_hor:,Im)*this%pi(i_hor:,Re), M)
+  Q = - trapezium( M%r(:)**2 * sqrt(G%grr(:)) * (    &
+                  this%phi(:,Re)*this%pi(:,Im) - this%phi(:,Im)*this%pi(:,Re)  ),  M)
 
 end function Noether_charge
 

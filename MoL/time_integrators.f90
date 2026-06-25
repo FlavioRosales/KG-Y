@@ -90,44 +90,76 @@ contains
 
       end select
 
+
       call bc_apply_state(S, G, M)
+
+
 
     end do
 
   end subroutine ssprk3_step_state
 
+  subroutine bc_apply_state(S, G, M) 
+    implicit none 
 
-  subroutine bc_apply_state(S, G, M)
-    implicit none
+    type(state_t), intent(inout)  :: S
+    type(geometry_t), intent(in)  :: G
+    type(mesh_t), intent(in)      :: M
+    real(kind=8)                  :: Wplus, Wminus
+    integer                       :: c 
 
-    class(state_t),    intent(inout) :: S
-    class(geometry_t), intent(in)    :: G
-    class(mesh_t),     intent(in)    :: M
+    do c = Re, Im
+      
+      S%phi(1,c)    = Lagrange_O3(S%phi(2,c),S%phi(3,c),S%phi(4,c))
+      S%psi(1,c)    = Lagrange_O3(S%psi(2,c),S%psi(3,c),S%psi(4,c))
 
-    integer :: n
+      ! S%phi(M%Nr,c) = Lagrange_O3(S%phi(M%Nr-1,c),S%phi(M%Nr-2,c),S%phi(M%Nr-3,c))
+      ! S%psi(M%Nr,c) = Lagrange_O3(S%psi(M%Nr-1,c),S%psi(M%Nr-2,c),S%psi(M%Nr-3,c))
 
-    n = size(S%phi, dim=1)
 
-    ! Frontera interna: extrapolación lineal.
-    S%phi(1,Re) = 2.0d0*S%phi(2,Re) - S%phi(3,Re)
-    S%phi(1,Im) = 2.0d0*S%phi(2,Im) - S%phi(3,Im)
+      !W_plus  = S%pi(1,c) - dsqrt(G%guu(1))*S%psi(1,c)
+      !W_minus = S%pi(1,c) + dsqrt(G%guu(1))*S%psi(1,c)
 
-    S%psi(1,Re) = 2.0d0*S%psi(2,Re) - S%psi(3,Re)
-    S%psi(1,Im) = 2.0d0*S%psi(2,Im) - S%psi(3,Im)
+      !=====================================================!
+                          !Inner boundary 
+      !=====================================================!
+      ! S%pi(1,c) = dsqrt(G%guu(1))*S%psi(1,c)
+        S%pi(1,c)    = Lagrange_O3(S%pi(2,c),S%pi(3,c),S%pi(4,c))
 
-    S%pi(1,Re)  = 2.0d0*S%pi(2,Re)  - S%pi(3,Re)
-    S%pi(1,Im)  = 2.0d0*S%pi(2,Im)  - S%pi(3,Im)
+      !=====================================================!
+                          !outer boundary 
+      !=====================================================!
+       !S%pi(M%Nr,c) = -dsqrt(G%guu(M%Nr))*S%psi(M%Nr,c)
 
-    ! Frontera externa: gradiente cero.
-    S%phi(n,Re) = S%phi(n-1,Re)
-    S%phi(n,Im) = S%phi(n-1,Im)
+        S%phi(M%Nr,c) = Lagrange_O3( &
+            S%phi(M%Nr-1,c), S%phi(M%Nr-2,c), S%phi(M%Nr-3,c) )
 
-    S%psi(n,Re) = S%psi(n-1,Re)
-    S%psi(n,Im) = S%psi(n-1,Im)
+        Wplus = Lagrange_O3( &
+            S%pi(M%Nr-1,c) - sqrt(G%guu(M%Nr-1))*S%psi(M%Nr-1,c), &
+            S%pi(M%Nr-2,c) - sqrt(G%guu(M%Nr-2))*S%psi(M%Nr-2,c), &
+            S%pi(M%Nr-3,c) - sqrt(G%guu(M%Nr-3))*S%psi(M%Nr-3,c) )
 
-    S%pi(n,Re)  = S%pi(n-1,Re)
-    S%pi(n,Im)  = S%pi(n-1,Im)
+        Wminus = 0.0d0
+
+        S%pi(M%Nr,c)  = 0.5d0*(Wplus + Wminus)
+        S%psi(M%Nr,c) = 0.5d0*(Wminus - Wplus)/sqrt(G%guu(M%Nr))
+      !=====================================================!
+
+    end do
+
 
   end subroutine bc_apply_state
+
+  pure function Lagrange_O3(f1,f2,f3) result(f0)
+    implicit none 
+    
+    real(kind=8), intent(in) :: f1,f2,f3
+    real(kind=8), intent(out) :: f0
+
+    f0 = 3.0d0 * f1 - 3.0d0*f2 + f3
+
+  end function Lagrange_O3
+
+
 
 end module time_integrators

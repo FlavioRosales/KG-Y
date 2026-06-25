@@ -28,6 +28,7 @@ SRC = \
   equations/rhs.f90 \
   MoL/cfl.f90 \
   MoL/time_integrators.f90 \
+  numerical/plane_projection.f90 \
   main/hdf5_lib.f90 \
   main/main.f90
 

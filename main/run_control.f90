@@ -3,9 +3,12 @@ module run_control
   private
   public :: sim_setup, sim_finalize
   public :: rmin_p, rmax_p, nr_p, t_end_p, cfl_p, nmax_p, ell_min_p, ell_max_p
-  public :: dt_out_1D_p, dt_out_0D_p
+  public :: dt_out_r_p
   public :: out_t_p
   public :: every_0D_p, every_1D_p
+  public :: dt_out_0D_p, dt_out_1D_p
+  public :: save_planes_p, every_planes_p, dt_out_planes_p
+  public :: r_plane_max_p, nphi_plane_p, ntheta_plane_p
   public :: p0_p, k0_p
   public :: M_bh_p, mu_p
   public :: only_m0_p
@@ -21,6 +24,15 @@ module run_control
   integer      :: nr_p   = 256
   integer      :: every_0D_p = 1
   integer      :: every_1D_p = 1
+  real(kind=8) :: dt_out_0D_p = -1.0d0
+  real(kind=8) :: dt_out_1D_p = -1.0d0
+
+  logical      :: save_planes_p   = .false.
+  integer      :: every_planes_p  = 100
+  real(kind=8) :: dt_out_planes_p = -1.0d0
+  real(kind=8) :: r_plane_max_p   = 150.0d0
+  integer      :: nphi_plane_p    = 0
+  integer      :: ntheta_plane_p  = 0
   integer      :: ell_min_p   = 0
   integer      :: ell_max_p   = 1
 
@@ -32,8 +44,7 @@ module run_control
 
   real(kind=8) :: M_bh_p  = 1.0d0
   real(kind=8) :: mu_p  = 0.0d0
-  real(kind=8) :: dt_out_1D_p = -1.0d0
-  real(kind=8) :: dt_out_0D_p = -1.0d0
+  real(kind=8) :: dt_out_r_p = 1.0d0
   integer :: out_t_p = 2
 
   logical :: only_m0_p = .false.
@@ -47,7 +58,9 @@ contains
     logical :: fexist
     namelist /grid/    rmin_p, rmax_p, nr_p, ell_min_p, ell_max_p, dr_min_p, dr_max_p, r_flat_p
     namelist /physics/ M_bh_p, mu_p, p0_p, k0_p, initial_conditions_p
-    namelist /run/     t_end_p, cfl_p, nmax_p, dt_out_1D_p, dt_out_0D_p, out_t_p, every_0D_p, every_1D_p, only_m0_p
+    namelist /run/     t_end_p, cfl_p, nmax_p, dt_out_r_p, out_t_p, every_0D_p, every_1D_p, &
+                        dt_out_0D_p, dt_out_1D_p, only_m0_p, save_planes_p, every_planes_p, &
+                        dt_out_planes_p, r_plane_max_p, nphi_plane_p, ntheta_plane_p
 
     inquire(file="params.nml", exist=fexist)
     if (.not. fexist) then
@@ -149,12 +162,19 @@ contains
         case ("t_end", "t_end_p");       call parse_real(val, t_end_p)
         case ("cfl", "cfl_p");           call parse_real(val, cfl_p)
         case ("nmax", "nmax_p");         call parse_int (val, nmax_p)
-        case ("dt_out_1D", "dt_out_1D_p"); call parse_real(val, dt_out_1D_p)
-        case ("dt_out_0D", "dt_out_0D_p"); call parse_real(val, dt_out_0D_p)
+        case ("dt_out_r", "dt_out_r_p"); call parse_real(val, dt_out_r_p)
         case ("out_t", "out_t_p");       call parse_int (val, out_t_p)
         case ("every_0d", "every_0d_p"); call parse_int (val, every_0D_p)
-        case ("every_1d", "every_1d_p"); call parse_int (val, every_1D_p)
-        case ("only_m0", "only_m0_p");   call parse_logical(val, only_m0_p)
+        case ("every_1d", "every_1d_p");     call parse_int (val, every_1D_p)
+        case ("dt_out_0d", "dt_out_0d_p");     call parse_real(val, dt_out_0D_p)
+        case ("dt_out_1d", "dt_out_1d_p");     call parse_real(val, dt_out_1D_p)
+        case ("save_planes", "save_planes_p"); call parse_logical(val, save_planes_p)
+        case ("every_planes", "every_planes_p"); call parse_int(val, every_planes_p)
+        case ("dt_out_planes", "dt_out_planes_p"); call parse_real(val, dt_out_planes_p)
+        case ("r_plane_max", "r_plane_max_p"); call parse_real(val, r_plane_max_p)
+        case ("nphi_plane", "nphi_plane_p");   call parse_int(val, nphi_plane_p)
+        case ("ntheta_plane", "ntheta_plane_p"); call parse_int(val, ntheta_plane_p)
+        case ("only_m0", "only_m0_p");         call parse_logical(val, only_m0_p)
         end select
       end select
     end do
