@@ -154,7 +154,7 @@ contains
     implicit none 
     
     real(kind=8), intent(in) :: f1,f2,f3
-    real(kind=8), intent(out) :: f0
+    real(kind=8) :: f0
 
     f0 = 3.0d0 * f1 - 3.0d0*f2 + f3
 

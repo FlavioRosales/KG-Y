@@ -30,6 +30,7 @@ SRC = \
   MoL/time_integrators.f90 \
   numerical/plane_projection.f90 \
   main/hdf5_lib.f90 \
+  equations/sl_projector.f90 \
   main/main.f90
 
 OBJ = $(SRC:%.f90=$(OBJDIR)/%.o)

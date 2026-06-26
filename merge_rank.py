@@ -14,6 +14,8 @@ This script constructs a single, analysis-friendly file:
   * /diagnostics and /fields are concatenated along their mode axis;
   * /planes is summed element-by-element across ranks, because every rank
     stores a partial modal reconstruction of the same physical plane;
+  * /spectrum/ell_XXXX/P_*_local is summed element-by-element across the
+    ranks that own one or more m values for that ell;
   * /grid and any other static top-level items are copied from rank 0.
 
 The source rank files are deleted only after the merged file has been
@@ -34,8 +36,9 @@ import h5py
 import numpy as np
 
 
-MERGED_TOP_LEVEL = {"modes", "diagnostics", "fields", "planes"}
+MERGED_TOP_LEVEL = {"modes", "diagnostics", "fields", "planes", "spectrum"}
 STATIC_PLANE_NAMES = {"t", "r", "theta", "varphi", "x", "y", "z"}
+STATIC_SPECTRUM_NAMES = {"t", "k", "lambda"}
 
 
 @dataclass
@@ -467,6 +470,128 @@ def merge_planes(
             destination[selection] = partial_sum
 
 
+
+def sum_shared_dataset(
+    files: list[h5py.File],
+    source: h5py.Dataset,
+    parent: h5py.Group,
+    name: str,
+    time_block: int,
+    gzip: int | None,
+) -> None:
+    """Sum identical-shape datasets stored as partial contributions by rank."""
+    for fin in files[1:]:
+        current = fin[source.name]
+        if current.shape != source.shape:
+            raise ValueError(
+                f"{source.name}: shape inconsistente en {fin.filename}: "
+                f"{current.shape}; se esperaba {source.shape}."
+            )
+        if current.dtype != source.dtype:
+            raise ValueError(
+                f"{source.name}: dtype inconsistente en {fin.filename}."
+            )
+
+    chunks = None
+    if gzip is not None and source.ndim > 0:
+        chunks = (min(time_block, source.shape[0]), *source.shape[1:])
+
+    destination = create_dataset_like(
+        parent,
+        name,
+        source,
+        shape=source.shape,
+        chunks=chunks,
+        gzip=gzip,
+    )
+
+    if source.ndim == 0:
+        value = np.zeros((), dtype=source.dtype)
+        for fin in files:
+            value[...] += fin[source.name][()]
+        destination[()] = value
+        return
+
+    for t0 in range(0, source.shape[0], time_block):
+        t1 = min(t0 + time_block, source.shape[0])
+        selection = (slice(t0, t1),) + (slice(None),) * (source.ndim - 1)
+        partial_sum = np.zeros((t1 - t0, *source.shape[1:]), dtype=source.dtype)
+        for fin in files:
+            partial_sum += fin[source.name][selection]
+        destination[selection] = partial_sum
+
+
+def merge_spectrum(
+    files: list[h5py.File],
+    out_file: h5py.File,
+    time_block: int,
+    gzip: int | None,
+) -> None:
+    """Merge /spectrum by summing P_*_local across the contributing ranks.
+
+    The spectrum layout differs from /fields and /diagnostics: each rank only
+    owns the ell groups for which it evolves one or more m values.  When an
+    ell is split between ranks, k and lambda are identical static datasets,
+    whereas P_phi_local is a partial sum over m and must be accumulated.
+    """
+    spectrum_files = [fin for fin in files if "spectrum" in fin]
+    if not spectrum_files:
+        return
+
+    ref_group = spectrum_files[0]["spectrum"]
+    out_group = group_with_attrs(out_file, "spectrum", ref_group)
+
+    if "t" not in ref_group:
+        raise KeyError(f"{spectrum_files[0].filename}: falta /spectrum/t.")
+
+    for fin in spectrum_files[1:]:
+        if "t" not in fin["spectrum"]:
+            raise KeyError(f"{fin.filename}: falta /spectrum/t.")
+
+    copy_static_dataset(spectrum_files, ref_group["t"], out_group, "t")
+
+    ell_names: set[str] = set()
+    for fin in spectrum_files:
+        ell_names.update(
+            name
+            for name, obj in fin["spectrum"].items()
+            if isinstance(obj, h5py.Group) and name.startswith("ell_")
+        )
+
+    for ell_name in sorted(ell_names):
+        ell_files = [fin for fin in spectrum_files if ell_name in fin["spectrum"]]
+        ref_ell_group = ell_files[0]["spectrum"][ell_name]
+        out_ell_group = group_with_attrs(out_group, ell_name, ref_ell_group)
+
+        dataset_names = {
+            name for name, obj in ref_ell_group.items()
+            if isinstance(obj, h5py.Dataset)
+        }
+        for fin in ell_files[1:]:
+            current_names = {
+                name for name, obj in fin["spectrum"][ell_name].items()
+                if isinstance(obj, h5py.Dataset)
+            }
+            if current_names != dataset_names:
+                raise ValueError(
+                    f"/spectrum/{ell_name}: datasets inconsistentes en {fin.filename}."
+                )
+
+        for name in sorted(dataset_names):
+            source = ref_ell_group[name]
+            if name in STATIC_SPECTRUM_NAMES:
+                copy_static_dataset(ell_files, source, out_ell_group, name)
+            else:
+                sum_shared_dataset(
+                    ell_files,
+                    source,
+                    out_ell_group,
+                    name,
+                    time_block,
+                    gzip,
+                )
+
+
 def copy_static_top_level(files: list[h5py.File], out_file: h5py.File) -> None:
     reference = files[0]
     for name, obj in reference.items():
@@ -515,6 +640,7 @@ def merge(files_paths: list[Path], output: Path, args: argparse.Namespace) -> No
                 args.mode_block, args.time_block, args.gzip,
             )
             merge_planes(files, out_file, args.plane_time_block, args.gzip)
+            merge_spectrum(files, out_file, args.time_block, args.gzip)
 
             out_file.attrs["merged_mode_count"] = total_modes
 
