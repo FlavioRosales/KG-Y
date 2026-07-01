@@ -1,20 +1,47 @@
 module hdf5_lib
   use hdf5
+  use, intrinsic :: iso_c_binding, only: c_int, c_int64_t
   implicit none
   private
 
   public :: h5_init, h5_finalize
+
   public :: h5_open_new, h5_close_file
+  public :: h5_flush_file, h5_start_swmr_write
+
   public :: h5_create_group, h5_close_group
   public :: h5_close_dataset
+
   public :: h5_write_real_1d, h5_write_int_1d
-  public :: h5_create_real_time_series, h5_write_real_time_sample
-  public :: h5_create_real_0d_series, h5_write_real_0d_sample
-  public :: h5_create_real_1d_series, h5_write_real_1d_block
-  public :: h5_create_real_2d_series, h5_write_real_2d_sample
+
+  public :: h5_create_int_scalar, h5_write_int_scalar
+
+  public :: h5_create_real_time_series
+  public :: h5_write_real_time_sample
+
+  public :: h5_create_real_0d_series
+  public :: h5_write_real_0d_sample
+
+  public :: h5_create_real_1d_series
+  public :: h5_write_real_1d_block
+
+  public :: h5_create_real_2d_series
+  public :: h5_write_real_2d_sample
+
   public :: read_sl_modes_h5
 
+  interface
+    function kg_h5fstart_swmr_write(fid) bind(C, name='H5Fstart_swmr_write') result(status)
+      import :: c_int, c_int64_t
+
+      integer(c_int64_t), value :: fid
+      integer(c_int)            :: status
+    end function kg_h5fstart_swmr_write
+  end interface
+
 contains
+
+
 
   subroutine h5_init(ierr)
     integer, intent(out) :: ierr
@@ -33,8 +60,78 @@ contains
     integer(HID_T),   intent(out) :: fid
     integer,          intent(out) :: ierr
 
-    call h5fcreate_f(trim(filename), H5F_ACC_TRUNC_F, fid, ierr)
+    integer(HID_T) :: fapl
+    integer        :: ierr2
+
+    call h5pcreate_f(H5P_FILE_ACCESS_F, fapl, ierr)
+    if (ierr /= 0) return
+
+    call h5pset_libver_bounds_f(fapl, H5F_LIBVER_LATEST_F, &
+                                H5F_LIBVER_LATEST_F, ierr)
+    if (ierr /= 0) then
+      call h5pclose_f(fapl, ierr2)
+      return
+    end if
+
+    call h5fcreate_f(trim(filename), H5F_ACC_TRUNC_F, fid, ierr, &
+                     access_prp=fapl)
+
+    call h5pclose_f(fapl, ierr2)
   end subroutine h5_open_new
+
+
+    subroutine h5_start_swmr_write(fid, ierr)
+    integer(HID_T), intent(in)  :: fid
+    integer,        intent(out) :: ierr
+
+    integer(c_int) :: c_status
+
+    c_status = kg_h5fstart_swmr_write(int(fid, c_int64_t))
+    ierr     = int(c_status)
+  end subroutine h5_start_swmr_write
+
+
+  subroutine h5_flush_file(fid, ierr)
+    integer(HID_T), intent(in)  :: fid
+    integer,        intent(out) :: ierr
+
+    call h5fflush_f(fid, H5F_SCOPE_GLOBAL_F, ierr)
+  end subroutine h5_flush_file
+
+
+  subroutine h5_create_int_scalar(loc_id, name, did, ierr)
+    integer(HID_T),   intent(in)  :: loc_id
+    character(len=*), intent(in)  :: name
+    integer(HID_T),   intent(out) :: did
+    integer,          intent(out) :: ierr
+
+    integer(HID_T)   :: sid
+    integer(HSIZE_T) :: dims(1)
+    integer          :: ierr2
+
+    dims(1) = 1_HSIZE_T
+
+    call h5screate_simple_f(1, dims, sid, ierr)
+    call h5dcreate_f(loc_id, trim(name), H5T_NATIVE_INTEGER, sid, did, ierr)
+
+    call h5sclose_f(sid, ierr2)
+  end subroutine h5_create_int_scalar
+
+
+  subroutine h5_write_int_scalar(did, value, ierr)
+    integer(HID_T), intent(in)  :: did
+    integer,        intent(in)  :: value
+    integer,        intent(out) :: ierr
+
+    integer(HSIZE_T) :: dims(1)
+    integer          :: x(1)
+
+    dims(1) = 1_HSIZE_T
+    x(1)    = value
+
+    call h5dwrite_f(did, H5T_NATIVE_INTEGER, x, dims, ierr)
+  end subroutine h5_write_int_scalar
+  
 
 
   subroutine h5_close_file(fid, ierr)

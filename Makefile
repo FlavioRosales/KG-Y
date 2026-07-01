@@ -47,7 +47,7 @@ $(OBJDIR)/%.o: %.f90
 run: $(TARGET)
 	@mkdir -p $(RUN_DIR)
 	@cp $(PARAMS) $(RUN_DIR)/params.nml
-	mpirun --mca btl ^tcp -np $(NPROC) --wdir $(RUN_DIR) $(abspath $(TARGET))
+	mpirun --mca btl ^tcp -np $(NPROC) --use-hwthread-cpus --wdir $(RUN_DIR) $(abspath $(TARGET))
 
 clean:
 	rm -rf $(OBJDIR) $(TARGET)

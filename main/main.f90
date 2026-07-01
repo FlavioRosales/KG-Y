@@ -13,7 +13,8 @@ program kg_y_main
   use plane_projection
   use sl_projection, only: sl_projector_t, sl_projector_load, &
                            sl_projector_power_phi, sl_projector_free
-  use hdf5, only: HID_T
+  use, intrinsic :: iso_c_binding, only: c_int, c_int64_t
+  use hdf5
 
   implicit none
 
@@ -53,18 +54,19 @@ program kg_y_main
   integer :: cache_ptr
   integer :: n_ini, n_fin, base, rem
 
-  integer :: nout_0D, nout_1D, nout_planes
-  integer :: iout_0D, iout_1D, iout_planes
-  integer :: nout_spectrum
+  integer :: nout_0D, nout_1D, nout_planes, nout_spectrum
+  integer :: iout_0D, iout_1D, iout_planes, iout_spectrum
   integer :: nphi_plane, ntheta_plane
 
   integer(HID_T) :: fid_out
-  integer(HID_T) :: gid_grid, gid_modes, gid_diag, gid_fields
+  integer(HID_T) :: gid_grid, gid_modes, gid_diag, gid_fields, gid_status
   integer(HID_T) :: gid_planes, gid_xy, gid_xz
   integer(HID_T) :: gid_spectrum, did_t_spectrum
   integer(HID_T), allocatable :: gid_spectrum_ell(:)
   integer(HID_T), allocatable :: did_spectrum_power(:)
   integer(HID_T) :: did_t0D, did_N, did_F, did_Finf
+  integer(HID_T) :: did_valid_0D, did_valid_1D
+  integer(HID_T) :: did_valid_planes, did_valid_spectrum, did_run_complete
   integer(HID_T) :: did_t1D, did_phi_re, did_phi_im, did_pi_re, did_pi_im
   integer(HID_T) :: did_t_planes
   integer(HID_T) :: did_phi_xy_re, did_phi_xy_im, did_pi_xy_re, did_pi_xy_im
@@ -86,6 +88,7 @@ program kg_y_main
   real(kind=8), allocatable :: spectrum_power(:), spectrum_power_block(:)
 
   logical :: use_sl_ic
+  logical :: save_fields
   logical, allocatable :: has_spectrum_ell(:)
 
   character(len=256) :: sl_filename
@@ -96,6 +99,14 @@ program kg_y_main
   integer, parameter :: CACHE_K = 1
   type(sl_cache_slot_t) :: sl_cache(CACHE_K)
 
+  interface
+    function kg_h5fstart_swmr_write(fid) bind(C, name='H5Fstart_swmr_write') result(status)
+      import :: c_int, c_int64_t
+      integer(c_int64_t), value :: fid
+      integer(c_int)            :: status
+    end function kg_h5fstart_swmr_write
+  end interface
+
   ! ============================================================
   ! INICIALIZACIÓN
   ! ============================================================
@@ -103,6 +114,13 @@ program kg_y_main
   call h5_init(ierr_h5)
 
   call sim_setup()
+  save_fields = save_fields_p
+
+  use_sl_ic = (trim(initial_conditions_p) == 'mode_from_SL'     .or. &
+               trim(initial_conditions_p) == 'mode_from_sl'     .or. &
+               trim(initial_conditions_p) == 'mode_from_SL_all' .or. &
+               trim(initial_conditions_p) == 'mode_from_sl_all')
+
   call set_sigma_k(p0_p)
   call build_mesh(Mesh)
 
@@ -130,6 +148,14 @@ program kg_y_main
     every_1D_p = max(1, nint(dt_out_1D_p / dt))
   end if
 
+  ! El espectro tiene una cadencia propia. Si no se especifica,
+  ! hereda la de 0D, nunca la de los campos 1D pesados.
+  if (dt_out_spectrum_p /= -1.0d0) then
+    every_spectrum_p = max(1, nint(dt_out_spectrum_p / dt))
+  else
+    every_spectrum_p = max(1, every_0D_p)
+  end if
+
   if (dt_out_planes_p /= -1.0d0) then
     every_planes_p = max(1, nint(dt_out_planes_p / dt))
   end if
@@ -143,7 +169,16 @@ program kg_y_main
     write(*,'(A,1X,A)')      'IC       =', trim(initial_conditions_p)
     write(*,'(A,1X,I0)')     'nmax     =', nmax_p
     write(*,'(A,1X,I0)')     'every_0D =', every_0D_p
-    write(*,'(A,1X,I0)')     'every_1D =', every_1D_p
+
+    if (save_fields) then
+      write(*,'(A,1X,I0)') 'every_1D =', every_1D_p
+    else
+      write(*,'(A)') 'fields output = disabled (reserved for future checkpoints)'
+    end if
+
+    if (use_sl_ic) then
+      write(*,'(A,1X,I0)') 'every_spectrum =', every_spectrum_p
+    end if
 
     if (save_planes_p) then
       write(*,'(A,1X,I0)') 'every_planes =', every_planes_p
@@ -224,11 +259,6 @@ program kg_y_main
 
   sl_filename = '/home/flavio/Codes/KG-Y/numerical/sl_spectrum.h5'
 
-  use_sl_ic = (trim(initial_conditions_p) == 'mode_from_SL'     .or. &
-               trim(initial_conditions_p) == 'mode_from_sl'     .or. &
-               trim(initial_conditions_p) == 'mode_from_SL_all' .or. &
-               trim(initial_conditions_p) == 'mode_from_sl_all')
-
   ! ============================================================
   ! CONDICIONES INICIALES
   ! ============================================================
@@ -297,37 +327,58 @@ program kg_y_main
 
   ! ============================================================
   ! ARCHIVO LOCAL DEL RANK Y DATASETS
+  !
+  ! El archivo se crea en formato HDF5 "latest" y entra en SWMR
+  ! solo después de construir por completo su layout. A partir de
+  ! ese punto no se crean nuevos grupos ni datasets.
   ! ============================================================
   nout_0D = count_output_samples(Nt, every_0D_p)
-  nout_1D = count_output_samples(Nt, every_1D_p)
+
+  if (save_fields) then
+    nout_1D = count_output_samples(Nt, every_1D_p)
+  else
+    nout_1D = 0
+  end if
+
+  if (use_sl_ic) then
+    nout_spectrum = count_output_samples(Nt, every_spectrum_p)
+  else
+    nout_spectrum = 0
+  end if
 
   allocate(N_local(nlocal), F_local(nlocal), Finf_local(nlocal))
-  allocate(io_buffer(Nr, min(IO_BLOCK_MODES, nlocal)))
+
+  if (save_fields .or. save_planes_p) then
+    allocate(io_buffer(Nr, min(max(IO_BLOCK_MODES, PROJ_BLOCK_MODES), nlocal)))
+  end if
 
   write(output_filename,'("output_rank_",I5.5,".h5")') rank
 
-  call h5_open_new(trim(output_filename), fid_out, ierr_h5)
+  call open_output_file_swmr(trim(output_filename), fid_out, ierr_h5)
+  call check_h5(ierr_h5, 'creating SWMR-compatible output file')
 
   call h5_create_group(fid_out, 'grid',        gid_grid,   ierr_h5)
   call h5_create_group(fid_out, 'modes',       gid_modes,  ierr_h5)
   call h5_create_group(fid_out, 'diagnostics', gid_diag,   ierr_h5)
-  call h5_create_group(fid_out, 'fields',      gid_fields, ierr_h5)
+
+  if (save_fields) then
+    call h5_create_group(fid_out, 'fields', gid_fields, ierr_h5)
+  end if
 
   ! ============================================================
   ! ESPECTRO SL
   !
-  ! Se guarda en los mismos tiempos que los campos 1D:
+  ! El espectro tiene su propia malla temporal:
   !
   !   /spectrum/t
   !   /spectrum/ell_xxxx/k
   !   /spectrum/ell_xxxx/lambda
   !   /spectrum/ell_xxxx/P_phi_local(n, it)
   !
-  ! Cada rank escribe únicamente los ell que contiene.
+  ! No depende de /fields. Esto permite apagar los campos 1D
+  ! pesados y conservar una salida espectral frecuente.
   ! ============================================================
   if (use_sl_ic) then
-
-    nout_spectrum = nout_1D
 
     allocate(gid_spectrum_ell(0:ell_max))
     allocate(did_spectrum_power(0:ell_max))
@@ -359,12 +410,14 @@ program kg_y_main
   call h5_create_real_0d_series(gid_diag, 'F',    nlocal, nout_0D, did_F,    ierr_h5)
   call h5_create_real_0d_series(gid_diag, 'Finf', nlocal, nout_0D, did_Finf, ierr_h5)
 
-  call h5_create_real_time_series(gid_fields, 't', nout_1D, did_t1D, ierr_h5)
+  if (save_fields) then
+    call h5_create_real_time_series(gid_fields, 't', nout_1D, did_t1D, ierr_h5)
 
-  call h5_create_real_1d_series(gid_fields, 'phi_re', Nr, nlocal, nout_1D, did_phi_re, ierr_h5)
-  call h5_create_real_1d_series(gid_fields, 'phi_im', Nr, nlocal, nout_1D, did_phi_im, ierr_h5)
-  call h5_create_real_1d_series(gid_fields, 'pi_re',  Nr, nlocal, nout_1D, did_pi_re,  ierr_h5)
-  call h5_create_real_1d_series(gid_fields, 'pi_im',  Nr, nlocal, nout_1D, did_pi_im,  ierr_h5)
+    call h5_create_real_1d_series(gid_fields, 'phi_re', Nr, nlocal, nout_1D, did_phi_re, ierr_h5)
+    call h5_create_real_1d_series(gid_fields, 'phi_im', Nr, nlocal, nout_1D, did_phi_im, ierr_h5)
+    call h5_create_real_1d_series(gid_fields, 'pi_re',  Nr, nlocal, nout_1D, did_pi_re,  ierr_h5)
+    call h5_create_real_1d_series(gid_fields, 'pi_im',  Nr, nlocal, nout_1D, did_pi_im,  ierr_h5)
+  end if
 
   if (save_planes_p) then
 
@@ -436,6 +489,42 @@ program kg_y_main
 
   end if
 
+  ! /status se construye antes de activar SWMR. Cada contador se
+  ! actualiza solo después de que el snapshot correspondiente fue
+  ! escrito y vaciado al archivo por completo.
+  call h5_create_group(fid_out, 'status', gid_status, ierr_h5)
+
+  call create_int_scalar(gid_status, 'n_valid_0D', did_valid_0D, ierr_h5)
+  call check_h5(ierr_h5, 'creating /status/n_valid_0D')
+
+  call create_int_scalar(gid_status, 'n_valid_1D', did_valid_1D, ierr_h5)
+  call check_h5(ierr_h5, 'creating /status/n_valid_1D')
+
+  call create_int_scalar(gid_status, 'n_valid_planes', did_valid_planes, ierr_h5)
+  call check_h5(ierr_h5, 'creating /status/n_valid_planes')
+
+  call create_int_scalar(gid_status, 'n_valid_spectrum', did_valid_spectrum, ierr_h5)
+  call check_h5(ierr_h5, 'creating /status/n_valid_spectrum')
+
+  call create_int_scalar(gid_status, 'run_complete', did_run_complete, ierr_h5)
+  call check_h5(ierr_h5, 'creating /status/run_complete')
+
+  call write_int_scalar(did_valid_0D,       0, ierr_h5)
+  call write_int_scalar(did_valid_1D,       0, ierr_h5)
+  call write_int_scalar(did_valid_planes,   0, ierr_h5)
+  call write_int_scalar(did_valid_spectrum, 0, ierr_h5)
+  call write_int_scalar(did_run_complete,   0, ierr_h5)
+  call check_h5(ierr_h5, 'initializing /status')
+
+  call flush_output_file(ierr_h5)
+  call check_h5(ierr_h5, 'flushing HDF5 layout before SWMR')
+
+  call start_swmr_write(fid_out, ierr_h5)
+  call check_h5(ierr_h5, 'activating HDF5 SWMR write mode')
+
+  call flush_output_file(ierr_h5)
+  call check_h5(ierr_h5, 'flushing HDF5 file after SWMR activation')
+
   ! ============================================================
   ! SNAPSHOT INICIAL
   ! ============================================================
@@ -451,19 +540,25 @@ program kg_y_main
   call h5_write_real_0d_sample(did_N,    iout_0D, N_local,    ierr_h5)
   call h5_write_real_0d_sample(did_F,    iout_0D, F_local,    ierr_h5)
   call h5_write_real_0d_sample(did_Finf, iout_0D, Finf_local, ierr_h5)
+  call commit_snapshot(did_valid_0D, iout_0D, '0D initial')
 
-  iout_1D = 1
-
-  call h5_write_real_time_sample(did_t1D, iout_1D, 0.0d0, ierr_h5)
-  call write_fields_snapshot(iout_1D)
+  if (save_fields) then
+    iout_1D = 1
+    call h5_write_real_time_sample(did_t1D, iout_1D, 0.0d0, ierr_h5)
+    call write_fields_snapshot(iout_1D)
+    call commit_snapshot(did_valid_1D, iout_1D, '1D initial')
+  end if
 
   if (save_planes_p) then
     iout_planes = 1
     call write_planes_snapshot(iout_planes, 0.0d0)
+    call commit_snapshot(did_valid_planes, iout_planes, 'planes initial')
   end if
 
   if (use_sl_ic) then
-    call write_spectrum_snapshot(iout_1D, 0.0d0)
+    iout_spectrum = 1
+    call write_spectrum_snapshot(iout_spectrum, 0.0d0)
+    call commit_snapshot(did_valid_spectrum, iout_spectrum, 'spectrum initial')
   end if
 
   ! ============================================================
@@ -491,20 +586,35 @@ program kg_y_main
       call h5_write_real_0d_sample(did_N,    iout_0D, N_local,    ierr_h5)
       call h5_write_real_0d_sample(did_F,    iout_0D, F_local,    ierr_h5)
       call h5_write_real_0d_sample(did_Finf, iout_0D, Finf_local, ierr_h5)
+      call commit_snapshot(did_valid_0D, iout_0D, '0D')
+
 
     end if
 
-    if (mod(istep, every_1D_p) == 0 .or. istep == Nt) then
+    ! /fields queda reservado para checkpoints futuros. Mientras
+    ! save_fields=.false., no se crea ni se escribe este bloque.
+    if (save_fields) then
+      if (mod(istep, every_1D_p) == 0 .or. istep == Nt) then
 
-      iout_1D = iout_1D + 1
+        iout_1D = iout_1D + 1
 
-      call h5_write_real_time_sample(did_t1D, iout_1D, dt*dble(istep), ierr_h5)
-      call write_fields_snapshot(iout_1D)
+        call h5_write_real_time_sample(did_t1D, iout_1D, dt*dble(istep), ierr_h5)
+        call write_fields_snapshot(iout_1D)
+        call commit_snapshot(did_valid_1D, iout_1D, '1D')
 
-      if (use_sl_ic) then
-        call write_spectrum_snapshot(iout_1D, dt*dble(istep))
       end if
+    end if
 
+    ! El cálculo y guardado espectral no dependen de /fields.
+    if (use_sl_ic) then
+      if (mod(istep, every_spectrum_p) == 0 .or. istep == Nt) then
+
+        iout_spectrum = iout_spectrum + 1
+
+        call write_spectrum_snapshot(iout_spectrum, dt*dble(istep))
+        call commit_snapshot(did_valid_spectrum, iout_spectrum, 'spectrum')
+
+      end if
     end if
 
     if (save_planes_p) then
@@ -513,15 +623,20 @@ program kg_y_main
         iout_planes = iout_planes + 1
 
         call write_planes_snapshot(iout_planes, dt*dble(istep))
-
-        if (rank == 0) then
-          write(*,'("t = ",ES12.5)') dt*dble(istep)
-        end if
+        call commit_snapshot(did_valid_planes, iout_planes, 'planes')
 
       end if
     end if
 
+    
+
   end do
+
+  call write_int_scalar(did_run_complete, 1, ierr_h5)
+  call check_h5(ierr_h5, 'setting /status/run_complete')
+
+  call flush_output_file(ierr_h5)
+  call check_h5(ierr_h5, 'final HDF5 flush')
 
   call MPI_Barrier(MPI_COMM_WORLD, ierr_mpi)
 
@@ -534,15 +649,18 @@ program kg_y_main
   ! ============================================================
   ! CIERRE DE HDF5
   ! ============================================================
-  call h5_close_dataset(did_t0D,    ierr_h5)
-  call h5_close_dataset(did_N,      ierr_h5)
-  call h5_close_dataset(did_F,      ierr_h5)
-  call h5_close_dataset(did_Finf,   ierr_h5)
-  call h5_close_dataset(did_t1D,    ierr_h5)
-  call h5_close_dataset(did_phi_re, ierr_h5)
-  call h5_close_dataset(did_phi_im, ierr_h5)
-  call h5_close_dataset(did_pi_re,  ierr_h5)
-  call h5_close_dataset(did_pi_im,  ierr_h5)
+  call h5_close_dataset(did_t0D,  ierr_h5)
+  call h5_close_dataset(did_N,    ierr_h5)
+  call h5_close_dataset(did_F,    ierr_h5)
+  call h5_close_dataset(did_Finf, ierr_h5)
+
+  if (save_fields) then
+    call h5_close_dataset(did_t1D,    ierr_h5)
+    call h5_close_dataset(did_phi_re, ierr_h5)
+    call h5_close_dataset(did_phi_im, ierr_h5)
+    call h5_close_dataset(did_pi_re,  ierr_h5)
+    call h5_close_dataset(did_pi_im,  ierr_h5)
+  end if
 
   if (save_planes_p) then
 
@@ -580,10 +698,20 @@ program kg_y_main
 
   end if
 
+  call h5_close_dataset(did_valid_0D,       ierr_h5)
+  call h5_close_dataset(did_valid_1D,       ierr_h5)
+  call h5_close_dataset(did_valid_planes,   ierr_h5)
+  call h5_close_dataset(did_valid_spectrum, ierr_h5)
+  call h5_close_dataset(did_run_complete,   ierr_h5)
+
+  call h5_close_group(gid_status, ierr_h5)
   call h5_close_group(gid_grid,   ierr_h5)
   call h5_close_group(gid_modes,  ierr_h5)
   call h5_close_group(gid_diag,   ierr_h5)
-  call h5_close_group(gid_fields, ierr_h5)
+
+  if (save_fields) then
+    call h5_close_group(gid_fields, ierr_h5)
+  end if
 
   call h5_close_file(fid_out, ierr_h5)
 
@@ -634,6 +762,114 @@ contains
       nout = nout + 1
     end if
   end function count_output_samples
+
+
+  subroutine open_output_file_swmr(filename, fid, ierr)
+    character(len=*), intent(in)  :: filename
+    integer(HID_T),   intent(out) :: fid
+    integer,          intent(out) :: ierr
+
+    integer(HID_T) :: fapl
+    integer        :: ierr_close
+
+    call h5pcreate_f(H5P_FILE_ACCESS_F, fapl, ierr)
+    if (ierr /= 0) return
+
+    call h5pset_libver_bounds_f(fapl, H5F_LIBVER_LATEST_F, H5F_LIBVER_LATEST_F, ierr)
+    if (ierr /= 0) then
+      call h5pclose_f(fapl, ierr_close)
+      return
+    end if
+
+    call h5fcreate_f(trim(filename), H5F_ACC_TRUNC_F, fid, ierr, access_prp=fapl)
+    call h5pclose_f(fapl, ierr_close)
+  end subroutine open_output_file_swmr
+
+
+  subroutine start_swmr_write(fid, ierr)
+    integer(HID_T), intent(in)  :: fid
+    integer,        intent(out) :: ierr
+
+    integer(c_int) :: c_status
+
+    c_status = kg_h5fstart_swmr_write(int(fid, c_int64_t))
+    ierr     = int(c_status)
+  end subroutine start_swmr_write
+
+
+  subroutine flush_output_file(ierr)
+    integer, intent(out) :: ierr
+
+    call h5fflush_f(fid_out, H5F_SCOPE_GLOBAL_F, ierr)
+  end subroutine flush_output_file
+
+
+  subroutine create_int_scalar(loc_id, name, did, ierr)
+    integer(HID_T),   intent(in)  :: loc_id
+    character(len=*), intent(in)  :: name
+    integer(HID_T),   intent(out) :: did
+    integer,          intent(out) :: ierr
+
+    integer(HID_T)   :: sid
+    integer(HSIZE_T) :: dims(1)
+    integer          :: ierr_close
+
+    dims(1) = 1_HSIZE_T
+
+    call h5screate_simple_f(1, dims, sid, ierr)
+    if (ierr /= 0) return
+
+    call h5dcreate_f(loc_id, trim(name), H5T_NATIVE_INTEGER, sid, did, ierr)
+    call h5sclose_f(sid, ierr_close)
+  end subroutine create_int_scalar
+
+
+  subroutine write_int_scalar(did, value, ierr)
+    integer(HID_T), intent(in)  :: did
+    integer,        intent(in)  :: value
+    integer,        intent(out) :: ierr
+
+    integer(HSIZE_T) :: dims(1)
+    integer          :: x(1)
+
+    dims(1) = 1_HSIZE_T
+    x(1)    = value
+
+    call h5dwrite_f(did, H5T_NATIVE_INTEGER, x, dims, ierr)
+  end subroutine write_int_scalar
+
+
+  subroutine commit_snapshot(did_valid, isnap, label)
+    integer(HID_T),   intent(in) :: did_valid
+    integer,          intent(in) :: isnap
+    character(len=*), intent(in) :: label
+
+    ! 1) Todos los datasets del snapshot ya fueron escritos.
+    call flush_output_file(ierr_h5)
+    call check_h5(ierr_h5, 'flushing completed '//trim(label)//' snapshot')
+
+    ! 2) Solo entonces se confirma que la muestra es completa.
+    call write_int_scalar(did_valid, isnap, ierr_h5)
+    call check_h5(ierr_h5, 'committing '//trim(label)//' snapshot')
+
+    ! 3) El contador también debe quedar persistido.
+    call flush_output_file(ierr_h5)
+    call check_h5(ierr_h5, 'flushing committed '//trim(label)//' snapshot')
+  end subroutine commit_snapshot
+
+
+  subroutine check_h5(ierr, where)
+    integer,          intent(in) :: ierr
+    character(len=*), intent(in) :: where
+
+    if (ierr == 0) return
+
+    write(*,'(A,I0,3A,I0)') 'Rank ', rank, ': HDF5 failure in ', trim(where), &
+                            ' | ierr = ', ierr
+    flush(6)
+
+    call MPI_Abort(MPI_COMM_WORLD, 1, ierr_mpi)
+  end subroutine check_h5
 
 
   subroutine write_fields_snapshot(isnap)

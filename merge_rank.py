@@ -11,7 +11,7 @@ KG-Y, h5py sees the relevant datasets as
 This script constructs a single, analysis-friendly file:
 
   * /modes is assembled and sorted by the global nmode index;
-  * /diagnostics and /fields are concatenated along their mode axis;
+  * /diagnostics and, when present, /fields are concatenated along their mode axis;
   * /planes is summed element-by-element across ranks, because every rank
     stores a partial modal reconstruction of the same physical plane;
   * /spectrum/ell_XXXX/P_*_local is summed element-by-element across the
@@ -607,10 +607,27 @@ def merge(files_paths: list[Path], output: Path, args: argparse.Namespace) -> No
 
     with ExitStack() as stack:
         files = [stack.enter_context(h5py.File(path, "r")) for path in files_paths]
+        # /fields es opcional: algunas corridas sólo guardan diagnósticos,
+        # planos y/o espectro. Los grupos restantes sí son indispensables
+        # para reconstruir el archivo combinado.
         for fin in files:
-            for required in ("grid", "modes", "diagnostics", "fields"):
+            for required in ("grid", "modes", "diagnostics"):
                 if required not in fin:
                     raise KeyError(f"{fin.filename}: falta el grupo /{required}.")
+
+        fields_present = ["fields" in fin for fin in files]
+        if any(fields_present) and not all(fields_present):
+            missing = [
+                Path(fin.filename).name
+                for fin, present in zip(files, fields_present)
+                if not present
+            ]
+            print(
+                "Advertencia: /fields no está presente en todos los ranks; "
+                f"se omitirá del merge. Faltante en: {', '.join(missing)}"
+            )
+        elif not any(fields_present):
+            print("Aviso: no existe /fields en los archivos de rank; se omitirá del merge.")
 
         check_static_dataset(files, "/grid/r")
 
@@ -635,10 +652,14 @@ def merge(files_paths: list[Path], output: Path, args: argparse.Namespace) -> No
                 files, infos, out_file, "diagnostics", "t", total_modes,
                 args.mode_block, args.time_block, args.gzip,
             )
-            merge_modal_group(
-                files, infos, out_file, "fields", "t", total_modes,
-                args.mode_block, args.time_block, args.gzip,
-            )
+            # Sólo se intenta unir /fields cuando existe en todos los ranks.
+            # Si no se guardó ese grupo, el archivo combinado se crea sin él.
+            if all(fields_present):
+                merge_modal_group(
+                    files, infos, out_file, "fields", "t", total_modes,
+                    args.mode_block, args.time_block, args.gzip,
+                )
+
             merge_planes(files, out_file, args.plane_time_block, args.gzip)
             merge_spectrum(files, out_file, args.time_block, args.gzip)
 
